@@ -232,14 +232,16 @@ unsigned int gridType_c::getCapabilities(void) const
   }
 }
 
-assembler_c * gridType_c::findAssembler(const problem_c & p)
+assembler_c * gridType_c::findAssembler(const problem_c & p, bool quiet)
 {
   if (assembler_0_c::canHandle(p)) {
-    fprintf(stderr, "using assembler 0\n");
+    if (!quiet)
+      fprintf(stderr, "using assembler 0\n");
     return new assembler_0_c(p);
   }
   if (assembler_1_c::canHandle(p)) {
-    fprintf(stderr, "using assembler 1\n");
+    if (!quiet)
+      fprintf(stderr, "using assembler 1\n");
     return new assembler_1_c(p);
   }
 

@@ -28,12 +28,11 @@
 #include "bt_assert.h"
 
 #include <stdint.h>
+#include <atomic>
 #include <vector>
 #include <set>
 #include <string>
 #include <mutex>
-
-#include <stdint.h>
 
 class voxel_c;
 class separation_c;
@@ -96,13 +95,8 @@ private:
    */
   std::vector<solution_c*> solutions;
 
-  /**
-   * guards the solutions vector. The solver thread adds and removes solutions
-   * while the GUI thread reads them for display; both must hold this lock.
-   * Recursive so that a GUI call already holding it (see lockSolutions) can
-   * call the locking mutators below without deadlocking.
-   */
-  mutable std::recursive_mutex solutionMutex;
+  /** protects concurrent access to the solutions vector */
+  mutable std::recursive_mutex solutionsMutex;
 
   /**
    * this set contains the pairs of colours that are allowed when a piece
@@ -136,7 +130,7 @@ private:
    * this is independent of the solutions vector, these are the pure numbers.
    * 0xFFFFFFFF stands for too many to count
    */
-  unsigned long numAssemblies;
+  std::atomic<unsigned long> numAssemblies;
 
   /**
    * Number of found solutions for the problem.
@@ -144,7 +138,7 @@ private:
    * this is independent of the solutions vector, these are the pure numbers.
    * 0xFFFFFFFF stands for too many to count
    */
-  unsigned long numSolutions;
+  std::atomic<unsigned long> numSolutions;
 
   /**
    * we only save the information that the assembler needs to reset it's state
@@ -395,6 +389,13 @@ public:
    */
 
 
+  /** RAII lock for thread-safe access to saved solutions */
+  class SolutionsLock {
+    std::lock_guard<std::recursive_mutex> guard;
+  public:
+    explicit SolutionsLock(const problem_c & p) : guard(p.solutionsMutex) {}
+  };
+
   /**
    * remove all known solutions, reset time, counter, assembler.
    * prepare for solving the problem
@@ -421,9 +422,9 @@ public:
   /** get the assembler */
   const assembler_c * getAssembler(void) const { return assm; }
   /** call this for each found assembly */
-  void incNumAssemblies(void) { bt_assert(solveState == SS_SOLVING); numAssemblies++; }
+  void incNumAssemblies(void) { bt_assert(solveState == SS_SOLVING); numAssemblies.fetch_add(1, std::memory_order_relaxed); }
   /** call this for each found solution */
-  void incNumSolutions(void) { bt_assert(solveState == SS_SOLVING); numSolutions++; }
+  void incNumSolutions(void) { bt_assert(solveState == SS_SOLVING); numSolutions.fetch_add(1, std::memory_order_relaxed); }
   /** add time used to solve the puzzle (in seconds) the value is added to the already accumulated time. */
   void addTime(unsigned long time) { bt_assert(solveState == SS_SOLVING); usedTime += time; }
   /** add an assembly as a solution */
@@ -436,6 +437,11 @@ public:
    * You can give the index, where to add it. This defaults to the end of the list
    */
   void addSolution(assembly_c * assm, separation_c * disasm, unsigned int pos = 0xFFFFFFFF);
+  /** add an assembly as a solution with an explicit assembly sequence number */
+  void addSolution(assembly_c * assm, unsigned long assemblyNumber);
+  /** add an assembly with disassembly and explicit assembly/solution sequence numbers */
+  void addSolution(assembly_c * assm, separation_c * disasm, unsigned long assemblyNumber, unsigned long solutionNumber, unsigned int pos = 0xFFFFFFFF);
+  void addSolution(assembly_c * assm, separationInfo_c * disasm, unsigned long assemblyNumber, unsigned long solutionNumber, unsigned int pos = 0xFFFFFFFF);
   /** once finished analysing call finishedSolving for finish off all actions.
    * After that call no more modifications are possible, no more addSOlution, incNumAssemblies and so on.
    * */
@@ -458,28 +464,17 @@ public:
   /** find out if we have an idea about the number of assemblies */
   bool numAssembliesKnown(void) const { return solveState != SS_UNSOLVED; }
   /** get number of assemblies found so far. Throws an exception, when not known */
-  unsigned long getNumAssemblies(void) const { bt_assert(solveState != SS_UNSOLVED); return numAssemblies; }
+  unsigned long getNumAssemblies(void) const { bt_assert(solveState != SS_UNSOLVED); return numAssemblies.load(std::memory_order_relaxed); }
   /** find out if we have an idea about the number of solutions */
   bool numSolutionsKnown(void) const { return solveState != SS_UNSOLVED; }
   /** get number of solutions found so far. Throws an exception, when not known */
-  unsigned long getNumSolutions(void) const { bt_assert(solveState != SS_UNSOLVED); return numSolutions; }
+  unsigned long getNumSolutions(void) const { bt_assert(solveState != SS_UNSOLVED); return numSolutions.load(std::memory_order_relaxed); }
   /** find out, if we know something about the time for solving the puzzle */
   bool usedTimeKnown(void) const { return solveState != SS_UNSOLVED; }
   /** find out the time used to solve the puzzle up to the current state. Throws an exception when unknown */
   unsigned long getUsedTime(void) const { bt_assert(solveState != SS_UNSOLVED); return usedTime; }
   /** get number of solutions that were stored */
   unsigned int getNumberOfSavedSolutions(void) const { return solutions.size(); }
-
-  /**
-   * Acquire the lock guarding the solution list. A caller that reads a saved
-   * solution while the solver thread might be running must hold this across
-   * the whole read (and any copy it makes of the solution), so the solver can
-   * not delete or reallocate the list underneath it. Returns a movable RAII
-   * lock; keep it alive for the duration of the access.
-   */
-  std::unique_lock<std::recursive_mutex> lockSolutions(void) const {
-    return std::unique_lock<std::recursive_mutex>(solutionMutex);
-  }
 
   const solution_c * getSavedSolution(unsigned int sol) const { bt_assert(sol < solutions.size()); return solutions[sol]; }
   solution_c * getSavedSolution(unsigned int sol) { bt_assert(sol < solutions.size()); return solutions[sol]; }

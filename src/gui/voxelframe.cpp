@@ -51,6 +51,7 @@
 voxelFrame_c::voxelFrame_c(int x,int y,int w,int h) :
   Fl_Gl_Window(x,y,w,h),
   curAssembly(0),
+  curProblem(0),
   markerType(-1),
   size(10), cb(0),
   colors(pieceColor),
@@ -480,6 +481,18 @@ void voxelFrame_c::drawVoxelSpace() {
         rotater->addTransform();
         glTranslatef(shape->x - hx, shape->y - hy, shape->z - hz);
         glTranslatef(-centerX, -centerY, -centerZ);
+        if (shape->animAngle != 0) {
+          /* Rotate in local mesh space about the pivot voxel centre.
+           * Must be after the placement/center translations so the pivot
+           * is not shifted by -center (which made tumbles look edge-pivoted).
+           * Lp maps world pivot (V+0.5) into local coords: L = V+0.5 - P + h */
+          float plx = shape->animPivotX - (shape->x - hx);
+          float ply = shape->animPivotY - (shape->y - hy);
+          float plz = shape->animPivotZ - (shape->z - hz);
+          glTranslatef(plx, ply, plz);
+          glRotatef(shape->animAngle, shape->animAxisX, shape->animAxisY, shape->animAxisZ);
+          glTranslatef(-plx, -ply, -plz);
+        }
         glScalef(shape->scale, shape->scale, shape->scale);
         break;
       default:
@@ -766,6 +779,9 @@ unsigned int voxelFrame_c::addSpace(const voxel_c * vx) {
 
   i.list = 0;
   i.poly = 0;
+  i.animAngle = 0;
+  i.animAxisX = i.animAxisY = i.animAxisZ = 0;
+  i.animPivotX = i.animPivotY = i.animPivotZ = 0;
 
   shapes.push_back(i);
 
@@ -1074,6 +1090,8 @@ void voxelFrame_c::showAssembly(const problem_c * puz, unsigned int solNum) {
     delete curAssembly;
     curAssembly = 0;
   }
+  curProblem = 0;
+  shapeOrients.clear();
 
   hideMarker();
   clearSpaces();
@@ -1083,6 +1101,7 @@ void voxelFrame_c::showAssembly(const problem_c * puz, unsigned int solNum) {
 
     unsigned int num;
 
+    curProblem = puz;
     curAssembly = new assembly_c(puz->getSavedSolution(solNum)->getAssembly());
     const assembly_c * assm = curAssembly;
 
@@ -1107,6 +1126,10 @@ void voxelFrame_c::showAssembly(const problem_c * puz, unsigned int solNum) {
               pieceColorG(puz->getShapeIdOfPart(p), q),
               pieceColorB(puz->getShapeIdOfPart(p), q), 1);
 
+          if (shapeOrients.size() <= num)
+            shapeOrients.resize(num + 1, 0);
+          shapeOrients[num] = assm->getTransformation(piece);
+
         } else {
 
           voxel_c * vx = puz->getPuzzle().getGridType()->getVoxel(puz->getPartShape(p));
@@ -1116,6 +1139,10 @@ void voxelFrame_c::showAssembly(const problem_c * puz, unsigned int solNum) {
           setSpacePosition(num, 0, 0, 0, 1);
 
           setSpaceColor(num, 0);
+
+          if (shapeOrients.size() <= num)
+            shapeOrients.resize(num + 1, 0);
+          shapeOrients[num] = 0;
         }
 
         piece++;
@@ -1285,8 +1312,47 @@ void voxelFrame_c::showPlacement(const problem_c * puz, unsigned int piece, unsi
 void voxelFrame_c::updatePositions(piecePositions_c *shifting) {
 
   for (unsigned int p = 0; p < shapes.size()-1; p++) {
+
+    float ang = 0, ax = 0, ay = 0, az = 0, px = 0, py = 0, pz = 0;
+    bool animRot = shifting->getRotationAnim(p, &ang, &ax, &ay, &az, &px, &py, &pz);
+
+    unsigned int t = shifting->getTrans(p);
+    /* Always sync mesh to getTrans. During a tumble getTrans is the *start*
+     * orientation; without this, scrubbing reverse leaves the end mesh in place
+     * and the OpenGL arc looks like a snap to a wrong pose. */
+    if (t != (unsigned int)-1 && curProblem && p < shapeOrients.size() && shapeOrients[p] != t) {
+      unsigned int piece = 0;
+      bool done = false;
+      for (unsigned int part = 0; part < curProblem->getNumberOfParts() && !done; part++) {
+        for (unsigned int q = 0; q < curProblem->getPartMaximum(part); q++, piece++) {
+          if (piece != p) continue;
+          voxel_c * vx = curProblem->getPuzzle().getGridType()->getVoxel(curProblem->getPartShape(part));
+          bt_assert2(vx->transform(t));
+          if (shapes[p].list) { glDeleteLists(shapes[p].list, 1); shapes[p].list = 0; }
+          if (shapes[p].poly) { delete shapes[p].poly; shapes[p].poly = 0; }
+          delete shapes[p].shape;
+          shapes[p].shape = vx;
+          shapeOrients[p] = t;
+          done = true;
+          break;
+        }
+      }
+    }
+
     setSpacePosition(p, shifting->getX(p), shifting->getY(p), shifting->getZ(p), 1);
     setSpaceColor(p, shifting->getA(p));
+
+    if (animRot) {
+      shapes[p].animAngle = ang;
+      shapes[p].animAxisX = ax;
+      shapes[p].animAxisY = ay;
+      shapes[p].animAxisZ = az;
+      shapes[p].animPivotX = px;
+      shapes[p].animPivotY = py;
+      shapes[p].animPivotZ = pz;
+    } else {
+      shapes[p].animAngle = 0;
+    }
   }
 
   redraw();

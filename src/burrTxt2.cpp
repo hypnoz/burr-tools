@@ -149,7 +149,7 @@ int main(int argv, char* args[]) {
         assmThread.currentAction() != solveThread_c::ACT_ERROR) {
 
       if (checkInput()) {
-        cout << "abborting \n";
+        cout << "aborting \n";
         assmThread.stop();
 
         while (assmThread.currentAction() != solveThread_c::ACT_FINISHED &&

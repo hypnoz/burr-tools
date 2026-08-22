@@ -42,7 +42,7 @@
 #define GL_SILENCE_DEPRECATION 1
 #include <FL/Fl.H>
 #include <FL/fl_ask.H>
-#include <FL/Fl_File_Chooser.H>
+#include "filechooser.h"
 
 #pragma GCC diagnostic pop
 
@@ -141,7 +141,7 @@ void stlExport_c::cb_FileChooser(void)
   char curFile[500];
   snprintf(curFile, 500, "%s/%s", Pname->value(), Fname->value());
 
-  const char * f = fl_file_chooser("Choose STL File to write", "*.stl", curFile, 0);
+  const char * f = bt_file_chooser_save("Choose STL File to write", "STL Files\t*.stl", curFile);
 
   if (f)
   {

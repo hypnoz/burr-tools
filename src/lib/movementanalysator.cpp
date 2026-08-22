@@ -28,6 +28,7 @@
 #include "voxel.h"
 #include "disassemblerhashes.h"
 #include "gridtype.h"
+#include "rotationmoves_0.h"
 
 #include <string.h>
 
@@ -303,8 +304,9 @@ bool movementAnalysator_c::checkmovement(unsigned int maxPieces, unsigned int ne
   return true;
 }
 
-movementAnalysator_c::movementAnalysator_c(const problem_c & problem) :
-  piecenumber(problem.getNumberOfPieces()), maxstep((unsigned int) -1) {
+movementAnalysator_c::movementAnalysator_c(const problem_c & problem, bool enableRotations) :
+  piecenumber(problem.getNumberOfPieces()), maxstep((unsigned int) -1),
+  checkRotations(false), bricksGrid(false), rotationMoves(0), rotationsActive(false) {
 
   cache = problem.getPuzzle().getGridType()->getMovementCache(problem);
   /* we assert that there must be a cache, otherwise no disassembly
@@ -312,6 +314,8 @@ movementAnalysator_c::movementAnalysator_c(const problem_c & problem) :
    * have been called
    */
   bt_assert(cache);
+
+  bricksGrid = (problem.getPuzzle().getGridType()->getType() == gridType_c::GT_BRICKS);
 
   /* allocate the necessary arrays */
   movement = new unsigned int[piecenumber];
@@ -330,6 +334,15 @@ movementAnalysator_c::movementAnalysator_c(const problem_c & problem) :
   nextstate = -1;
 
   nodes = new countingNodeHash();
+
+  if (bricksGrid)
+    rotationMoves = new rotationMoves_0_c(problem, cache);
+
+  setCheckRotations(enableRotations);
+}
+
+void movementAnalysator_c::setCheckRotations(bool enable) {
+  checkRotations = enable && bricksGrid && rotationMoves;
 }
 
 movementAnalysator_c::~movementAnalysator_c() {
@@ -340,6 +353,7 @@ movementAnalysator_c::~movementAnalysator_c() {
   delete cache;
   delete [] weights;
   delete nodes;
+  delete rotationMoves;
 }
 
 static int max(int a, int b) { if (a > b) return a; else return b; }
@@ -506,6 +520,7 @@ void movementAnalysator_c::init_find(disassemblerNode_c * nd, const std::vector<
   nextstep = 1;
   nextstate = 0;
   next_pn = pcs.size();
+  rotationsActive = false;
 
   searchnode = nd;
   pieces = &pcs;
@@ -522,6 +537,9 @@ void movementAnalysator_c::init_find(disassemblerNode_c * nd, const std::vector<
    * "Computer Analysis of All 6 Piece Burrs"
    */
   prepare();
+
+  if (checkRotations && rotationMoves)
+    rotationMoves->init_find(nd, pcs);
 }
 
 /* at first we check if movement is possible at all in the current direction, if so
@@ -640,6 +658,17 @@ disassemblerNode_c * movementAnalysator_c::find(void) {
             nextstate = state99nextState;
         }
 
+        break;
+
+      case 3:
+        /* 90° rotation moves (brick grids only, when enabled) */
+        if (checkRotations && rotationMoves) {
+          n = rotationMoves->find();
+          if (!n)
+            nextstate++;
+        } else {
+          nextstate++;
+        }
         break;
 
       default:

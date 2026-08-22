@@ -91,6 +91,8 @@ libburr_src = [
   'src/lib/ps3dloader.cpp',
   'src/lib/problem.cpp',
   'src/lib/puzzle.cpp',
+  'src/lib/rotationmoves_0.cpp',
+  'src/lib/rotationrules.cpp',
   'src/lib/solution.cpp',
   'src/lib/solvethread.cpp',
   'src/lib/stl.cpp',
@@ -119,6 +121,7 @@ gui_src = [
   'src/gui/blocklistgroup.cpp',
   'src/gui/buttongroup.cpp',
   'src/gui/configuration.cpp',
+  'src/gui/filechooser.cpp',
   'src/gui/constraintsgroup.cpp',
   'src/gui/convertwindow.cpp',
   'src/gui/grideditor.cpp',
@@ -168,7 +171,7 @@ cxx = meson.get_compiler('cpp')
 
 # macOS specific dependencies
 if host_machine.system() == 'darwin'
-  cocoa_dep = dependency('appleframeworks', modules : ['Cocoa', 'ScreenCaptureKit'])
+  cocoa_dep = dependency('appleframeworks', modules : ['Cocoa', 'ScreenCaptureKit', 'UniformTypeIdentifiers'])
 else
   cocoa_dep = dependency('', required: false)
 endif

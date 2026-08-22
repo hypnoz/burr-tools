@@ -154,10 +154,21 @@ extern "C"
 
             solveThread_c assmThread(*p->getProblem(pr), par);
 
-            // Initialize for new solution attempt
-            assmThread.start(false);
+            if (!assmThread.start(false)) {
+                std::cout << "Could not start Solver\n";
+                return false;
+            }
+
+            assmThread.waitUntilFinished();
 
             if (assmThread.currentAction() == solveThread_c::ACT_ERROR) {
+                std::cout << "Error in Solver\n";
+                std::cout << " error code: " << assmThread.getErrorState() << "\n";
+                std::cout << " parameter  : " << assmThread.getErrorParam() << "\n";
+                return false;
+            }
+
+            if (assmThread.currentAction() == solveThread_c::ACT_ASSERT) {
                 std::cout << "Exception in Solver\n";
                 std::cout << " file      : " << assmThread.getAssertException().file;
                 std::cout << " function  : " << assmThread.getAssertException().function;

@@ -155,6 +155,8 @@ class voxelFrame_c : public Fl_Gl_Window {
   private:
 
     assembly_c * curAssembly; // the currently shown assembly (if there is one)
+    const problem_c * curProblem; // problem for the shown assembly (for orientation updates)
+    std::vector<unsigned int> shapeOrients; // last applied orientation per piece space
 
     /* Draws the voxelspace. */
     void drawVoxelSpace();
@@ -191,6 +193,11 @@ class voxelFrame_c : public Fl_Gl_Window {
       bool useChecker;
       Polyhedron * poly;
       GLuint list;  // the display list for this shape 0 means no list defined
+
+      /* mid-tumble animation (angle==0 means inactive) */
+      float animAngle;
+      float animAxisX, animAxisY, animAxisZ;
+      float animPivotX, animPivotY, animPivotZ;
 
     } shapeInfo;
 

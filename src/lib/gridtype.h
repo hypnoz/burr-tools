@@ -139,7 +139,7 @@ class gridType_c {
      * because we are not dependent on the gridtype this function is static
      * but it needs to know the puzzle
      */
-    static assembler_c * findAssembler(const problem_c & p);
+    static assembler_c * findAssembler(const problem_c & p, bool quiet = false);
 
   private:
 

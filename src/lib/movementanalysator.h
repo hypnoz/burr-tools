@@ -28,6 +28,7 @@ class disassemblerNode_c;
 class movementCache_c;
 class assembly_c;
 class countingNodeHash;
+class rotationMoves_0_c;
 
 /**
  * this class is can do analysis of movements within a puzzle.
@@ -58,6 +59,11 @@ class movementAnalysator_c {
 
     countingNodeHash * nodes;
 
+    bool checkRotations;
+    bool bricksGrid;
+    rotationMoves_0_c * rotationMoves;
+    bool rotationsActive;
+
     /* these variables are used for the routine that looks
      * for the pieces to move find, checkmovement
      */
@@ -80,8 +86,10 @@ class movementAnalysator_c {
      * This can not be changed, once you done that but you can analyse
      * many positions
      */
-    movementAnalysator_c(const problem_c & puz);
+    movementAnalysator_c(const problem_c & puz, bool enableRotations = false);
     ~movementAnalysator_c(void);
+
+    void setCheckRotations(bool enable);
 
     /* you use either the 2 functions below, or completeFind
      * the below functions return one possible movement after another and you can stop as soon

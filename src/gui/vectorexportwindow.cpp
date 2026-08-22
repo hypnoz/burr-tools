@@ -20,7 +20,7 @@
  */
 #include "vectorexportwindow.h"
 
-#include <FL/Fl_File_Chooser.H>
+#include "filechooser.h"
 
 // Unused?
 // static const char * extensions[] = {
@@ -36,7 +36,7 @@ static void cb_Button2_stub(Fl_Widget* /*o*/, void* v) { ((vectorExportWindow_c*
 static void cb_FileChoose_stub(Fl_Widget* /*o*/, void* v) { ((vectorExportWindow_c*)v)->cb_FileChoose(); }
 void vectorExportWindow_c::cb_FileChoose(void) {
 
-  const char * newFile = fl_file_chooser("File to save image to", "", inp->value(), 0);
+  const char * newFile = bt_file_chooser_save("File to save image to", "", inp->value());
 
   if (newFile)
     inp->value(newFile);

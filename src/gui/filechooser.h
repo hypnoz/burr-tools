@@ -18,52 +18,13 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
+#ifndef __FILECHOOSER_H__
+#define __FILECHOOSER_H__
 
-#include "thread.h"
+/** Show the platform-native open-file dialog. Returns NULL when cancelled. */
+const char * bt_file_chooser_open(const char *title, const char *pattern, const char *preset);
 
-void thread_c::joinThread(void) {
-#ifndef NO_THREADING
-  if (!joined && t.joinable()) {
-    t.join();
-    joined = true;
-  }
+/** Show the platform-native save-file dialog. Returns NULL when cancelled. */
+const char * bt_file_chooser_save(const char *title, const char *pattern, const char *preset);
+
 #endif
-  running = false;
-}
-
-thread_c::~thread_c(void) {
-  stop();
-  joinThread();
-}
-
-void thread_c::start_thread(void)
-{
-  running = true;
-  run();
-  running = false;
-}
-
-bool thread_c::start() {
-
-  running = true;
-  joined = false;
-  bool result = false;
-
-#ifdef NO_THREADING
-  start_thread();
-  joined = true;
-  result = true;
-#else
-  t = std::thread([this](){ this->start_thread();});
-  result = t.get_id() != std::this_thread::get_id();
-
-  if (!result)
-  {
-    running = false;
-    joined = true;
-  }
-#endif
-
-  return result;
-}
-

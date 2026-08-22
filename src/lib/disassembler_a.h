@@ -105,8 +105,11 @@ class disassembler_a_c : public disassembler_c {
      * The problem can not be changed, once you done that but
      * you can analyse many assemblies for disassembability
      */
-    disassembler_a_c(const problem_c & puz);
+    disassembler_a_c(const problem_c & puz, bool enableRotations = false);
     ~disassembler_a_c(void);
+
+    /** enable or disable 90° rotation moves (brick grids only) */
+    void setCheckRotations(bool enable);
 
     /**
      * Disassemble an assembly of the puzzle.

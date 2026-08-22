@@ -26,10 +26,22 @@
 #include "bt_assert.h"
 #include "thread.h"
 
-#include <time.h>
 #include <atomic>
+#include <condition_variable>
+#include <mutex>
+#include <queue>
+#include <thread>
+#include <time.h>
 
 class problem_c;
+class assembly_c;
+class separation_c;
+
+struct disasmTask_c {
+  assembly_c * assembly;
+  unsigned long assemblyNumber;
+  unsigned long solutionNumber;
+};
 
 /* this class will handle the solving of one problem of the puzzle, it can also
  * be used to continue an already started solution, so that you can save you results
@@ -52,19 +64,18 @@ class solveThread_c : public assembler_cb, public thread_c {
     };
 
   private:
-    /* what is currently happening the the assembler thread. This is written by
-     * the worker thread and read (and written, via stop()) by the GUI thread,
-     * so it must be atomic. It also gates access to errState/errParam/ae which
-     * are published before action is set to ACT_ERROR / ACT_ASSERT.
-     */
+    /* what is currently happening in the assembler thread */
     std::atomic<unsigned int> action;
 
   public:
     /* return the current activity */
-    unsigned int currentAction(void) { return action; }
+    unsigned int currentAction(void) { return action.load(std::memory_order_relaxed); }
 
     /* some activities might have a parameter, return that */
     unsigned int currentActionParameter(void);
+
+    /** block until the solver thread has finished (success, pause, or error) */
+    void waitUntilFinished(void);
 
   private:
 
@@ -74,11 +85,11 @@ class solveThread_c : public assembler_cb, public thread_c {
   public:
 
     assembler_c::errState getErrorState(void) {
-      bt_assert(action == ACT_ERROR);
+      bt_assert(action.load(std::memory_order_relaxed) == ACT_ERROR);
       return errState;
     }
     int getErrorParam(void) {
-      bt_assert(action == ACT_ERROR);
+      bt_assert(action.load(std::memory_order_relaxed) == ACT_ERROR);
       return errParam;
     }
 
@@ -105,6 +116,7 @@ class solveThread_c : public assembler_cb, public thread_c {
     static const int PAR_DISASSM =            0x10;  // do the disassembly analysis
     static const int PAR_JUST_COUNT =         0x20;  // just count the solutions, don't save them
     static const int PAR_COMPLETE_ROTATIONS = 0x40;  // do a thorough rotation check
+    static const int PAR_CHECK_ROTATIONS =    0x80;  // try 90° piece rotations during disassembly
 
     // create all the necessary data structures to start the thread later on
     solveThread_c(problem_c & puz, int par);
@@ -124,16 +136,7 @@ class solveThread_c : public assembler_cb, public thread_c {
 
     void setSortMethod(int sort) { sortMethod = sort; }
 
-    /* If >= 0, the worker keeps the (limit-bounded) solution list sorted by
-     * this problem_c::sortSolutions method after every solution it adds, so a
-     * sort chosen in the GUI stays applied as new solutions arrive. -1 = off.
-     * Atomic: set from the GUI thread, read by the worker.
-     */
-    void setLiveSort(int method) { liveSort.store(method, std::memory_order_relaxed); }
-
   private:
-
-    std::atomic<int> liveSort;
 
     /* don't save more than this number of solutions 0 means no limit */
     unsigned int solutionLimit;
@@ -165,28 +168,31 @@ class solveThread_c : public assembler_cb, public thread_c {
 
   private:
 
+    std::atomic<bool> stopPressed;
+    bool return_after_prep;  // sometimes it is useful to only prepare and return,
+                             // if this flag is set, the program will return
 
-  std::atomic<bool> stopPressed;  // set by the GUI thread, read by the worker
-  bool return_after_prep;  // sometimes it is useful to only prepare and return,
-                           // if this flag is set, the program will return
+    disassembler_c * disassm;
+    assembler_c * assm;
 
+    /* asynchronous disassembly pipeline (when PAR_DISASSM is set) */
+    std::thread disasmWorker;
+    std::mutex disasmQueueMutex;
+    std::condition_variable disasmQueueCv;
+    std::queue<disasmTask_c> disasmQueue;
+    std::atomic<bool> disasmWorkerStop;
+    std::atomic<unsigned int> disasmPending;
 
-
-  disassembler_c * disassm;
-
-  /* the worker publishes the assembler here once it is fully constructed so
-   * that currentActionParameter(), called from the GUI thread, can query its
-   * progress. Atomic with release/acquire so the GUI never sees a
-   * half-constructed object (which would be a vptr race on the virtual call).
-   */
-  std::atomic<assembler_c *> assm;
-
-
-
-
+    void startDisasmWorker(void);
+    void stopDisasmWorker(void);
+    void disasmWorkerRun(void);
+    void enqueueDisassembly(assembly_c * a);
+    void flushDisassemblyQueue(void);
+    void processDisassembly(const disasmTask_c & task, int solutionAction);
+    unsigned int findInsertIndexByMoves(unsigned int lev) const;
+    void trimSavedSolutions(int solutionAction);
 
 public:
-
 
   // stop and exit
   virtual ~solveThread_c(void);
@@ -206,9 +212,10 @@ public:
   void stop(void);
 
   bool stopped(void) const {
-    return ((action == ACT_PAUSING) ||
-            (action == ACT_FINISHED) ||
-            (action == ACT_ERROR)
+    unsigned int act = action.load(std::memory_order_relaxed);
+    return ((act == ACT_PAUSING) ||
+            (act == ACT_FINISHED) ||
+            (act == ACT_ERROR)
            );
   }
 

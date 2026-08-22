@@ -118,8 +118,8 @@ void problem_c::save(xmlWriter_c & xml) const
 
   if (solveState != SS_UNSOLVED)
   {
-    xml.newAttrib("assemblies", numAssemblies);
-    xml.newAttrib("solutions", numSolutions);
+    xml.newAttrib("assemblies", numAssemblies.load(std::memory_order_relaxed));
+    xml.newAttrib("solutions", numSolutions.load(std::memory_order_relaxed));
     xml.newAttrib("time", usedTime);
   }
 
@@ -217,7 +217,9 @@ problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0
 
   name = pars.getAttributeValue("name");
   solveState = SS_UNSOLVED;
-  numAssemblies = numSolutions = usedTime = 0;
+  numAssemblies.store(0, std::memory_order_relaxed);
+  numSolutions.store(0, std::memory_order_relaxed);
+  usedTime = 0;
   maxHoles = 0xFFFFFFFF;
 
   std::string str = pars.getAttributeValue("maxHoles");
@@ -232,11 +234,11 @@ problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0
   {
     str = pars.getAttributeValue("assemblies");
     if (str.length())
-      numAssemblies = atoi(str.c_str());
+      numAssemblies.store(atoi(str.c_str()), std::memory_order_relaxed);
 
     str = pars.getAttributeValue("solutions");
     if (str.length())
-      numSolutions = atoi(str.c_str());
+      numSolutions.store(atoi(str.c_str()), std::memory_order_relaxed);
 
     str = pars.getAttributeValue("time");
     if (str.length())
@@ -819,41 +821,57 @@ unsigned int problem_c::getPartMaximum(unsigned int partID) const {
 }
 
 void problem_c::addSolution(assembly_c * assm) {
+  addSolution(assm, numAssemblies.load(std::memory_order_relaxed));
+}
+
+void problem_c::addSolution(assembly_c * assm, unsigned long assemblyNumber) {
   bt_assert(assm);
   bt_assert(solveState == SS_SOLVING);
 
-  std::lock_guard<std::recursive_mutex> guard(solutionMutex);
-  solutions.push_back(new solution_c(assm, numAssemblies));
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
+  solutions.push_back(new solution_c(assm, (unsigned int)assemblyNumber));
 }
 
 void problem_c::addSolution(assembly_c * assm, separation_c * disasm, unsigned int pos) {
+  addSolution(assm, disasm,
+      numAssemblies.load(std::memory_order_relaxed),
+      numSolutions.load(std::memory_order_relaxed),
+      pos);
+}
+
+void problem_c::addSolution(assembly_c * assm, separation_c * disasm, unsigned long assemblyNumber, unsigned long solutionNumber, unsigned int pos) {
   bt_assert(assm);
   bt_assert(solveState == SS_SOLVING);
 
-  std::lock_guard<std::recursive_mutex> guard(solutionMutex);
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
 
-  // if the given index is behind the number of solutions add at the end
   if (pos < solutions.size())
-    solutions.insert(solutions.begin()+pos, new solution_c(assm, numAssemblies, disasm, numSolutions));
+    solutions.insert(solutions.begin()+pos, new solution_c(assm, (unsigned int)assemblyNumber, disasm, (unsigned int)solutionNumber));
   else
-    solutions.push_back(new solution_c(assm, numAssemblies, disasm, numSolutions));
+    solutions.push_back(new solution_c(assm, (unsigned int)assemblyNumber, disasm, (unsigned int)solutionNumber));
 }
 
 void problem_c::addSolution(assembly_c * assm, separationInfo_c * disasm, unsigned int pos) {
+  addSolution(assm, disasm,
+      numAssemblies.load(std::memory_order_relaxed),
+      numSolutions.load(std::memory_order_relaxed),
+      pos);
+}
+
+void problem_c::addSolution(assembly_c * assm, separationInfo_c * disasm, unsigned long assemblyNumber, unsigned long solutionNumber, unsigned int pos) {
   bt_assert(assm);
   bt_assert(solveState == SS_SOLVING);
 
-  std::lock_guard<std::recursive_mutex> guard(solutionMutex);
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
 
-  // if the given index is behind the number of solutions add at the end
   if (pos < solutions.size())
-    solutions.insert(solutions.begin()+pos, new solution_c(assm, numAssemblies, disasm, numSolutions));
+    solutions.insert(solutions.begin()+pos, new solution_c(assm, (unsigned int)assemblyNumber, disasm, (unsigned int)solutionNumber));
   else
-    solutions.push_back(new solution_c(assm, numAssemblies, disasm, numSolutions));
+    solutions.push_back(new solution_c(assm, (unsigned int)assemblyNumber, disasm, (unsigned int)solutionNumber));
 }
 
 void problem_c::removeAllSolutions(void) {
-  std::lock_guard<std::recursive_mutex> guard(solutionMutex);
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
   for (unsigned int i = 0; i < solutions.size(); i++)
     delete solutions[i];
   solutions.clear();
@@ -861,13 +879,13 @@ void problem_c::removeAllSolutions(void) {
   assm = 0;
   assemblerState = "";
   solveState = SS_UNSOLVED;
-  numAssemblies = 0;
-  numSolutions = 0;
+  numAssemblies.store(0, std::memory_order_relaxed);
+  numSolutions.store(0, std::memory_order_relaxed);
   usedTime = 0;
 }
 
 void problem_c::removeSolution(unsigned int sol) {
-  std::lock_guard<std::recursive_mutex> guard(solutionMutex);
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
   bt_assert(sol < solutions.size());
   delete solutions[sol];
   solutions.erase(solutions.begin()+sol);
@@ -897,8 +915,8 @@ assembler_c::errState problem_c::setAssembler(assembler_c * assm) {
     bt_assert(solveState == SS_UNSOLVED);
 
     // if no data is available for assembler restoration reset counters
-    bt_assert(numAssemblies == 0);
-    bt_assert(numSolutions == 0);
+    bt_assert(numAssemblies.load(std::memory_order_relaxed) == 0);
+    bt_assert(numSolutions.load(std::memory_order_relaxed) == 0);
 
     solveState = SS_SOLVING;
   }
@@ -1001,7 +1019,7 @@ static bool comp_3_pieces(const solution_c * s1, const solution_c * s2)
 
 
 void problem_c::sortSolutions(int by) {
-  std::lock_guard<std::recursive_mutex> guard(solutionMutex);
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
   switch (by) {
     case 0: stable_sort(solutions.begin(), solutions.end(), comp_0_assembly); break;
     case 1: stable_sort(solutions.begin(), solutions.end(), comp_1_level   ); break;
@@ -1025,7 +1043,7 @@ void problem_c::makeUnknown(void)
   assemblerState = "";
   assemblerVersion = "";
 
-  numAssemblies = 0;
-  numSolutions = 0;
+  numAssemblies.store(0, std::memory_order_relaxed);
+  numSolutions.store(0, std::memory_order_relaxed);
   usedTime = 0;
 }

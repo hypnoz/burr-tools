@@ -50,6 +50,8 @@ public:
 
   int rotationMethod(void) { return i_rotationMethod?1:0; }
 
+  bool reverseScrollZoom(void) { return i_reverseScrollZoom; }
+
   int windowPosX(void) { return i_window_pos_x; }
   int windowPosY(void) { return i_window_pos_y; }
   int windowPosW(void) { return i_window_pos_w; }
@@ -94,6 +96,7 @@ private:
   bool i_use_blendedRemoving;
   bool i_use_displayLists;
   bool i_rotationMethod;
+  bool i_reverseScrollZoom;
 
   int i_window_pos_x;
   int i_window_pos_y;
