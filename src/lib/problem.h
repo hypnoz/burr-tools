@@ -99,6 +99,13 @@ private:
   mutable std::recursive_mutex solutionsMutex;
 
   /**
+   * When true, saved solutions were produced with Check Rotations and are
+   * written under <solutionsWithRotations> so older BurrTools can skip them.
+   * Classic <solutions> is used when this is false.
+   */
+  bool solutionsWithRotations;
+
+  /**
    * this set contains the pairs of colours that are allowed when a piece
    * is placed. The piece colour is in the high 16 bits, the result colour
    * in the lower 16. As right now only 64 colours are possible this will
@@ -475,6 +482,13 @@ public:
   unsigned long getUsedTime(void) const { bt_assert(solveState != SS_UNSOLVED); return usedTime; }
   /** get number of solutions that were stored */
   unsigned int getNumberOfSavedSolutions(void) const { return solutions.size(); }
+
+  /**
+   * True when solutions should be persisted under <solutionsWithRotations>
+   * (Check Rotations was used). Older BurrTools skip that element.
+   */
+  bool getSolutionsWithRotations(void) const { return solutionsWithRotations; }
+  void setSolutionsWithRotations(bool v) { solutionsWithRotations = v; }
 
   const solution_c * getSavedSolution(unsigned int sol) const { bt_assert(sol < solutions.size()); return solutions[sol]; }
   solution_c * getSavedSolution(unsigned int sol) { bt_assert(sol < solutions.size()); return solutions[sol]; }

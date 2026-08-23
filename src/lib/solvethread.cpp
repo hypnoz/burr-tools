@@ -148,6 +148,10 @@ disasmPending(0)
 
   if (par & PAR_DISASSM)
     disassm = new disassembler_0_c(puz, (par & PAR_CHECK_ROTATIONS) != 0);
+
+  /* Persist solutions under <solutionsWithRotations> so older BurrTools skip them */
+  if (par & PAR_CHECK_ROTATIONS)
+    puzzle.setSolutionsWithRotations(true);
 }
 
 solveThread_c::~solveThread_c(void) {

@@ -267,20 +267,20 @@ void usage(void) {
   cout << "  file: puzzle file with the puzzle definition to solve\n\n";
   cout << "  --json  machine-readable result for batch tools (implies -d -q -r;\n";
   cout << "          prints one JSON object with the highest disassembly level)\n";
-  cout << "  -d    try to disassemble and only print solutions that do disassemble\n";
-  cout << "  -p    print the disassembly plan\n";
-  cout << "  -r    reduce the placements bevore starting to solve the puzzle\n";
-  cout << "  -R    also try 90 degree piece rotations during disassembly (implies -d, brick grids)\n";
-  cout << "  -s    print the assemby\n";
-  cout << "  -q    be quiet and only print statistics\n";
-  cout << "  -n    don't print a newline at the end of the line\n";
-  cout << "  -o n  select the problem to solve\n";
-  cout << "  -o all solves all problems in file\n";
-  cout << "  -x    only redisassemble the given solutions\n";
-  cout << "  -a    ask for information about the current puzzle, the next letters must be:\n";
-  cout << "     s0 print solutions with the only the used pieces\n";
-  cout << "     s1 print solutions including the assemblies\n";
-  cout << "     c  print comment\n";
+  cout << "  -d      try to disassemble and only print solutions that do disassemble\n";
+  cout << "  -p      print the disassembly plan\n";
+  cout << "  -r      reduce the placements before starting to solve the puzzle\n";
+  cout << "  -R      also try 90 degree piece rotations during disassembly (implies -d, brick grids)\n";
+  cout << "  -s      print the assembly\n";
+  cout << "  -q      be quiet and only print statistics\n";
+  cout << "  -n      don't print a newline at the end of the line\n";
+  cout << "  -o n    select the problem to solve\n";
+  cout << "  -o all  solves all problems in file\n";
+  cout << "  -x      only redisassemble the given solutions\n";
+  cout << "  -a      ask for information about the current puzzle, the next letters must be:\n";
+  cout << "     s0   print solutions with the only the used pieces\n";
+  cout << "     s1   print solutions including the assemblies\n";
+  cout << "     c    print comment\n";
 }
 
 int main(int argv, char* args[]) {

@@ -71,6 +71,7 @@ class part_c {
 
 problem_c::problem_c(puzzle_c & puz) :
   puzzle(puz), result(0xFFFFFFFF),
+  solutionsWithRotations(false),
   assm(0),solveState(SS_UNSOLVED), numAssemblies(0),
   numSolutions(0), usedTime(0), maxHoles(0xFFFFFFFF)
 {}
@@ -88,6 +89,7 @@ problem_c::~problem_c(void) {
 
 problem_c::problem_c(const problem_c * orig, puzzle_c & puz) :
   puzzle(puz), result(orig->result),
+  solutionsWithRotations(false),
   solveState(SS_UNSOLVED), numAssemblies(0), numSolutions(0), usedTime(0)
 {
   assm = 0;
@@ -202,16 +204,21 @@ void problem_c::save(xmlWriter_c & xml) const
   }
 
   if (solutions.size()) {
-    xml.newTag("solutions");
+    /* Rotation-aware solutions go in a sibling tag that older BurrTools skip
+     * via skipSubTree on unknown problem children. Classic <solutions> stays
+     * free of <dt>/<rotation> so those files remain loadable. */
+    const char * tag = solutionsWithRotations ? "solutionsWithRotations" : "solutions";
+    xml.newTag(tag);
     for (unsigned int i = 0; i < solutions.size(); i++)
-      solutions[i]->save(xml);
-    xml.endTag("solutions");
+      solutions[i]->save(xml, solutionsWithRotations);
+    xml.endTag(tag);
   }
 
   xml.endTag("problem");
 }
 
-problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0xFFFFFFFF), assm(0)
+problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0xFFFFFFFF),
+  solutionsWithRotations(false), assm(0)
 {
   pars.require(xmlParser_c::START_TAG, "problem");
 
@@ -353,8 +360,25 @@ problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0
       result = atoi(str.c_str());
       pars.skipSubTree();
     }
-    else if (pars.getName() == "solutions")
+    else if (pars.getName() == "solutions" ||
+             pars.getName() == "solutionsWithRotations")
     {
+      bool fromRotations = (pars.getName() == "solutionsWithRotations");
+      std::string endTag = pars.getName();
+
+      if (fromRotations) {
+        /* Prefer the rotation-aware block; drop any classic solutions already read */
+        solutionsWithRotations = true;
+        for (unsigned int i = 0; i < solutions.size(); i++)
+          delete solutions[i];
+        solutions.clear();
+      } else if (solutionsWithRotations) {
+        /* Classic block is ignored once rotation solutions are present */
+        pars.skipSubTree();
+        pars.require(xmlParser_c::END_TAG, endTag);
+        continue;
+      }
+
       do
       {
         int state = pars.nextTag();
@@ -371,7 +395,7 @@ problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0
 
       } while (true);
 
-      pars.require(xmlParser_c::END_TAG, "solutions");
+      pars.require(xmlParser_c::END_TAG, endTag);
     }
     else if (pars.getName() == "bitmap")
     {
@@ -875,6 +899,7 @@ void problem_c::removeAllSolutions(void) {
   for (unsigned int i = 0; i < solutions.size(); i++)
     delete solutions[i];
   solutions.clear();
+  solutionsWithRotations = false;
   delete assm;
   assm = 0;
   assemblerState = "";

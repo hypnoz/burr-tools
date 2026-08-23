@@ -103,7 +103,7 @@ void getNumbers(std::string str, iter start, iter end, bool neg_allowed) {
  * State
  ************************************************************************/
 
-void state_c::save(xmlWriter_c & xml, unsigned int piecenumber) const
+void state_c::save(xmlWriter_c & xml, unsigned int piecenumber, bool includeRotationFields) const
 {
   xml.newTag("state");
 
@@ -143,29 +143,33 @@ void state_c::save(xmlWriter_c & xml, unsigned int piecenumber) const
   }
   xml.endTag("dz");
 
-  if (dt) {
-    xml.newTag("dt");
-    {
-      std::ostream & str = xml.addContent();
-      for (unsigned int ii = 0; ii < piecenumber; ii++)
+  /* Only for <solutionsWithRotations>: older BurrTools cannot skip unknown
+   * tags inside <state>, so classic <solutions> must stay dx/dy/dz only. */
+  if (includeRotationFields) {
+    if (dt) {
+      xml.newTag("dt");
       {
-        str << dt[ii];
-        if (ii < piecenumber-1)
-          str << " ";
+        std::ostream & str = xml.addContent();
+        for (unsigned int ii = 0; ii < piecenumber; ii++)
+        {
+          str << dt[ii];
+          if (ii < piecenumber-1)
+            str << " ";
+        }
       }
+      xml.endTag("dt");
     }
-    xml.endTag("dt");
-  }
 
-  if (rotPiece != (unsigned int)-1) {
-    xml.newTag("rotation");
-    xml.newAttrib("piece", rotPiece);
-    xml.newAttrib("px", rotPivotX);
-    xml.newAttrib("py", rotPivotY);
-    xml.newAttrib("pz", rotPivotZ);
-    xml.newAttrib("axis", rotAxis);
-    xml.newAttrib("sense", rotSense);
-    xml.endTag("rotation");
+    if (rotPiece != (unsigned int)-1) {
+      xml.newTag("rotation");
+      xml.newAttrib("piece", rotPiece);
+      xml.newAttrib("px", rotPivotX);
+      xml.newAttrib("py", rotPivotY);
+      xml.newAttrib("pz", rotPivotZ);
+      xml.newAttrib("axis", rotAxis);
+      xml.newAttrib("sense", rotSense);
+      xml.endTag("rotation");
+    }
   }
 
   xml.endTag("state");
@@ -369,7 +373,7 @@ int disassembly_c::compare(const disassembly_c * s2) const
  * Separation
  ************************************************************************/
 
-void separation_c::save(xmlWriter_c & xml, int type) const
+void separation_c::save(xmlWriter_c & xml, int type, bool includeRotationFields) const
 {
   xml.newTag("separation");
 
@@ -394,13 +398,13 @@ void separation_c::save(xmlWriter_c & xml, int type) const
 
   // now add all the states
   for (unsigned int jj = 0; jj < states.size(); jj++)
-    states[jj]->save(xml, pieces.size());
+    states[jj]->save(xml, pieces.size(), includeRotationFields);
 
   // finally save the removed and left over part
   // we add an attribute to the node of the subseparations to later distinguish
   // between the removed and the left over separation
-  if (removed) removed->save(xml, 2);
-  if (left)    left->save(xml, 1);
+  if (removed) removed->save(xml, 2, includeRotationFields);
+  if (left)    left->save(xml, 1, includeRotationFields);
 
   xml.endTag("separation");
 }
@@ -830,7 +834,7 @@ separationInfo_c::separationInfo_c(const separation_c * sep) {
   recursiveConstruction(sep);
 }
 
-void separationInfo_c::save(xmlWriter_c & xml) const
+void separationInfo_c::save(xmlWriter_c & xml, bool includeRotationCounts) const
 {
   xml.newTag("separationInfo");
 
@@ -841,17 +845,19 @@ void separationInfo_c::save(xmlWriter_c & xml) const
       xml.addContent(" ");
   }
 
-  bool anyRots = false;
-  for (unsigned int i = 0; i < rotValues.size(); i++)
-    if (rotValues[i]) { anyRots = true; break; }
-
-  if (anyRots) {
-    xml.addContent(" | ");
+  if (includeRotationCounts) {
+    bool anyRots = false;
     for (unsigned int i = 0; i < rotValues.size(); i++)
-    {
-      xml.addContent(rotValues[i]);
-      if (i < rotValues.size()-1)
-        xml.addContent(" ");
+      if (rotValues[i]) { anyRots = true; break; }
+
+    if (anyRots) {
+      xml.addContent(" | ");
+      for (unsigned int i = 0; i < rotValues.size(); i++)
+      {
+        xml.addContent(rotValues[i]);
+        if (i < rotValues.size()-1)
+          xml.addContent(" ");
+      }
     }
   }
 

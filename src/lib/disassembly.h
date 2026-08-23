@@ -139,7 +139,11 @@ public:
   ~state_c();
 
   /** save into an xml node */
-  void save(xmlWriter_c & xml, unsigned int piecenumber) const;
+  /**
+   * @param includeRotationFields when false, omit <dt> and <rotation> so the
+   *        file stays readable by older BurrTools
+   */
+  void save(xmlWriter_c & xml, unsigned int piecenumber, bool includeRotationFields = false) const;
 
   /** set the position of a piece */
   void set(unsigned int piece, int x, int y, int z);
@@ -272,8 +276,9 @@ public:
   /** copy constructor */
   separation_c(const separation_c * cpy);
 
-  /* save into an xml node, please always call with just xml, the type is for internal use */
-  void save(xmlWriter_c & xml, int type = 0) const;
+  /* save into an xml node; type is for internal use (left/removed).
+   * includeRotationFields controls <dt>/<rotation> in states. */
+  void save(xmlWriter_c & xml, int type = 0, bool includeRotationFields = false) const;
 
   ~separation_c();
 
@@ -392,8 +397,8 @@ class separationInfo_c : public disassembly_c {
     /** create a separation info from a normal separation */
     separationInfo_c(const separation_c * sep);
 
-    /** save into an xml node */
-    void save(xmlWriter_c & xml) const;
+    /** save into an xml node; includeRotationCounts writes the "| r0 r1 …" suffix */
+    void save(xmlWriter_c & xml, bool includeRotationCounts = false) const;
 
     /* implement abstract functions */
     virtual unsigned int sumMoves(void) const;

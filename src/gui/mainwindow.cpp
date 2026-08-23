@@ -3432,13 +3432,13 @@ void mainWindow_c::CreateSolveTab(void) {
     JustCount->tooltip(" Don\'t save the solutions, just count the number of them ");
     JustCount->clear_visible_focus();
 
-    CompleteRotations = new LFl_Check_Button("Expnsv Rot Check", 0, 3, 1, 1);
-    CompleteRotations->tooltip(" Do expensive and thorough rotation check, eliminating translations and rotations not in symmetry of the result shape ");
-    CompleteRotations->clear_visible_focus();
-
-    DropDisassemblies = new LFl_Check_Button("Drop Disassemblies", 1, 0, 1, 1);
+    DropDisassemblies = new LFl_Check_Button("Just Levels", 0, 3, 1, 1);
     DropDisassemblies->tooltip(" Don\'t save the Disassemblies, just the information about them ");
     DropDisassemblies->clear_visible_focus();
+
+    CompleteRotations = new LFl_Check_Button("Deep Symmetry Check", 1, 0, 1, 1);
+    CompleteRotations->tooltip(" Do expensive and thorough rotation check, eliminating translations and rotations not in symmetry of the result shape ");
+    CompleteRotations->clear_visible_focus();
 
     KeepMirrors = new LFl_Check_Button("Keep Mirror Solutions", 1, 1, 1, 1);
     KeepMirrors->tooltip(" Don't remove solutions that are mirrors of another solution ");
