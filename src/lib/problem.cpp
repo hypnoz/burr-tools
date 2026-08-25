@@ -457,9 +457,51 @@ problem_c::problem_c(puzzle_c & puz, xmlParser_c & pars) : puzzle(puz), result(0
     result = 0xFFFFFFFF;
 
   pars.require(xmlParser_c::END_TAG, "problem");
+
+  if (solutions.size() > 1 && resultValid())
+    dedupeRotatedAssemblies();
 }
 
 /************** PROBLEM ****************/
+
+void problem_c::dedupeRotatedAssemblies(void) {
+
+  for (unsigned int s = 0; s < puzzle.getNumberOfShapes(); s++)
+    puzzle.getShape(s)->initHotspot();
+
+  for (unsigned int i = 0; i < solutions.size(); ) {
+
+    const assembly_c * assembly = solutions[i]->getAssembly();
+    if (!assembly || !assembly->validSolution(*this)) {
+      i++;
+      continue;
+    }
+
+    bool drop = false;
+    for (unsigned int pivot = 0; pivot < getNumberOfPieces(); pivot++)
+      if (assembly->smallerRotationExists(*this, pivot, 0, true)) {
+        drop = true;
+        break;
+      }
+
+    if (drop) {
+      delete solutions[i];
+      solutions.erase(solutions.begin()+i);
+    } else
+      i++;
+  }
+
+  if (solveState != SS_UNSOLVED) {
+    numAssemblies.store(solutions.size(), std::memory_order_relaxed);
+
+    unsigned long sols = 0;
+    for (unsigned int i = 0; i < solutions.size(); i++)
+      if (solutions[i]->getDisassembly())
+        sols++;
+
+    numSolutions.store(sols, std::memory_order_relaxed);
+  }
+}
 
 void problem_c::removeShape(unsigned short idx) {
 

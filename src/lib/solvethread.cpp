@@ -26,6 +26,7 @@
 #include "assembly.h"
 #include "disassembler_0.h"
 #include "solution.h"
+#include "voxel.h"
 
 namespace {
 
@@ -52,9 +53,10 @@ void solveThread_c::run(void){
     /* first check, if there is an assembler available with the
      * problem, if there is one take that
      */
-    if (puzzle.getAssembler())
+    if (puzzle.getAssembler()) {
       assm = puzzle.getAssembler();
-
+      assm->applySolutionFilterFlags(parameters & PAR_KEEP_MIRROR, parameters & PAR_KEEP_ROTATIONS, parameters & PAR_COMPLETE_ROTATIONS);
+    }
     else {
 
       /* otherwise we have to create a new one
@@ -102,6 +104,9 @@ void solveThread_c::run(void){
     }
 
     if (!stopPressed.load(std::memory_order_relaxed)) {
+
+      for (unsigned int i = 0; i < puzzle.getPuzzle().getNumberOfShapes(); i++)
+        puzzle.getPuzzle().getShape(i)->initHotspot();
 
       action.store(ACT_ASSEMBLING, std::memory_order_relaxed);
       assm->assemble(this);

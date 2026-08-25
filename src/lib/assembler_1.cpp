@@ -265,7 +265,7 @@ void assembler_1_c::AddRangeNode(unsigned int col, unsigned int piecenode, unsig
 assembler_1_c::assembler_1_c(const problem_c & prob) :
   assembler_c(),
   problem(prob),
-  avoidTransformedAssemblies(0), avoidTransformedMirror(0),
+  avoidTransformedAssemblies(0), rotationFilterActive(0), avoidTransformedMirror(0),
   iterations(0),
   reducePiece(0)
 {
@@ -747,6 +747,21 @@ assembler_1_c::errState assembler_1_c::createMatrix(bool keepMirror, bool keepRo
   return errorsState;
 }
 
+void assembler_1_c::applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool comp) {
+
+  complete = comp;
+
+  if (keepMirror) {
+    delete avoidTransformedMirror;
+    avoidTransformedMirror = 0;
+  }
+
+  if (keepRotations)
+    avoidTransformedAssemblies = false;
+  else if (rotationFilterActive)
+    avoidTransformedAssemblies = true;
+}
+
 void assembler_1_c::remove_column(unsigned int c) {
   unsigned int j = c;
   do {
@@ -1008,6 +1023,7 @@ void assembler_1_c::reduce(void) {
 
 void assembler_1_c::checkForTransformedAssemblies(unsigned int pivot, mirrorInfo_c * mir) {
   avoidTransformedAssemblies = true;
+  rotationFilterActive = true;
   avoidTransformedPivot = pivot;
   avoidTransformedMirror = mir;
 }
@@ -1057,11 +1073,19 @@ void assembler_1_c::solution(void) {
 
     assembly_c * assembly = getAssembly();
 
-    if (avoidTransformedAssemblies && assembly->smallerRotationExists(problem, avoidTransformedPivot, avoidTransformedMirror, complete))
-      delete assembly;
-    else {
+    if (avoidTransformedAssemblies) {
+      bool drop = false;
+      for (unsigned int pivot = 0; pivot < problem.getNumberOfPieces(); pivot++)
+        if (assembly->smallerRotationExists(problem, pivot, 0, true)) {
+          drop = true;
+          break;
+        }
+      if (drop)
+        delete assembly;
+      else
+        getCallback()->assembly(assembly);
+    } else
       getCallback()->assembly(assembly);
-    }
 
 #if 0
     // as the below debug code has been way too useful an way too many

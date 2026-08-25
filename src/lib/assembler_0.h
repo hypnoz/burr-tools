@@ -198,6 +198,7 @@ private:
   /* the members for rotations rejection
    */
   bool avoidTransformedAssemblies;
+  bool rotationFilterActive;
   unsigned int avoidTransformedPivot;
   mirrorInfo_c * avoidTransformedMirror;
 
@@ -280,6 +281,7 @@ public:
 
   /* functions that are overloaded from assembler_c, for comments see there */
   errState createMatrix(bool keepMirror, bool keepRotations, bool complete);
+  void applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool complete);
   void assemble(assembler_cb * callback);
   int getErrorsParam(void) { return errorsParam; }
   virtual float getFinished(void) const;

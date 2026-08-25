@@ -27,6 +27,10 @@ assembler_c::errState assembler_c::createMatrix(bool /*keepMirror*/, bool /*keep
   return ERR_NONE;
 }
 
+void assembler_c::applySolutionFilterFlags(bool /*keepMirror*/, bool /*keepRotations*/, bool /*complete*/)
+{
+}
+
 assembler_c::errState assembler_c::setPosition(const char * /*string*/, const char * /*version*/)
 {
   return ERR_CAN_NOT_RESTORE_VERSION;

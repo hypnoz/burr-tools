@@ -41,10 +41,11 @@ inline bool isRotationDirection(unsigned int dir) {
 }
 
 /**
- * Generate valid 90° single-piece rotation moves for brick grids.
+ * Generate valid 90° rotation moves for brick grids.
  *
- * Pivot = each filled voxel of the moving piece; axes = X/Y/Z; senses = ±90°.
- * Clearance is delegated to rotationRules_c (Phase 1: end-position only).
+ * Single-piece and compound (multi-piece rigid) rotations share the same pivot,
+ * axis, and sense. Compound moves treat the selected pieces as one body for
+ * clearance checks.
  */
 class rotationMoves_0_c {
 
@@ -58,23 +59,21 @@ class rotationMoves_0_c {
     /* iterator state for find-style enumeration */
     disassemblerNode_c * searchnode;
     const std::vector<unsigned int> * pieces;
-    int nextpiece;
+    unsigned int nextsubset;
     int nextpivot;
     unsigned int nextaxis;
     unsigned int nextsense;
     bool active;
 
     std::vector<rotationRules_c::cell_t> pivotCells;
-    std::vector<rotationRules_c::cell_t> startCells;
-    std::vector<rotationRules_c::cell_t> occupied;
 
     void collectWorldCells(unsigned int pieceIdx, std::vector<rotationRules_c::cell_t> & out) const;
-    void rebuildOccupied(unsigned int movingPieceIdx);
-    void rebuildPieceCells(unsigned int pieceIdx);
+    void rebuildPivotCells(unsigned int subsetMask);
     disassemblerNode_c * tryCurrentCandidate(void);
 
     static void rotateVector(int * x, int * y, int * z, unsigned int axis, unsigned int sense);
     static unsigned char rotationTransformId(unsigned int axis, unsigned int sense);
+    static unsigned int nextSubsetMask(unsigned int mask, unsigned int n);
 
   public:
 

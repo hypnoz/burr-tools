@@ -145,90 +145,15 @@ int main(int argv, char* args[]) {
       continue;
     }
 
-    while (assmThread.currentAction() != solveThread_c::ACT_FINISHED &&
-        assmThread.currentAction() != solveThread_c::ACT_ERROR) {
+    assmThread.waitUntilFinished();
 
-      if (checkInput()) {
-        cout << "aborting \n";
-        assmThread.stop();
-
-        while (assmThread.currentAction() != solveThread_c::ACT_FINISHED &&
-            assmThread.currentAction() != solveThread_c::ACT_ERROR &&
-            assmThread.currentAction() != solveThread_c::ACT_PAUSING)
-#ifdef WIN32
-          Sleep(1);
-#else
-          sleep(1);
-#endif
-
-        break;
-      }
-
-      if (assmThread.currentAction() == solveThread_c::ACT_ERROR) {
-        cout << "Exception in Solver\n";
-        cout << " file      : " << assmThread.getAssertException().file;
-        cout << " function  : " << assmThread.getAssertException().function;
-        cout << " line      : " << assmThread.getAssertException().line;
-        cout << " expression: " << assmThread.getAssertException().expr;
-        return 1;
-      }
-
-
-      float finished = (p.getProblem(pr)->getAssembler())
-        ? p.getProblem(pr)->getAssembler()->getFinished()
-        : 0;
-
-      switch (assmThread.currentAction()) {
-        case solveThread_c::ACT_PREPARATION:
-          cout << "\rpreparing piece " << assmThread.currentActionParameter()+1;
-          break;
-        case solveThread_c::ACT_REDUCE:
-          cout << "\rreducing piece " << assmThread.currentActionParameter()+1;
-          break;
-        case solveThread_c::ACT_ASSEMBLING:
-          cout << "\rassembling " << finished*100 << "% done";
-          break;
-        case solveThread_c::ACT_DISASSEMBLING:
-          cout << "\rdisassembling " << finished*100 << "% done";
-          break;
-        case solveThread_c::ACT_WAIT_TO_STOP:
-          cout << "\rwaitin";
-          break;
-        case solveThread_c::ACT_ERROR:
-          cout << "\rerror: ";
-          switch (assmThread.getErrorState()) {
-            case assembler_c::ERR_TOO_MANY_UNITS:
-              cout << "Pieces contain " << assmThread.getErrorParam() << " units too many\n";
-              break;
-            case assembler_c::ERR_TOO_FEW_UNITS:
-              cout << "Pieces contain " << assmThread.getErrorParam() << " units less than required\n";
-              break;
-            case assembler_c::ERR_CAN_NOT_PLACE:
-              cout << "Piece " << assmThread.getErrorParam()+1 << " can be placed nowhere within the result";
-              break;
-            case assembler_c::ERR_CAN_NOT_RESTORE_VERSION:
-              cout << "Impossible to restore the saved state because the internal format changed.\n";
-              cout << "You either have to start from the beginning or finish with the old version of BurrTools, sorry";
-              break;
-            case assembler_c::ERR_CAN_NOT_RESTORE_SYNTAX:
-              cout << "Impossible to restore the saved state because something with the data is wrong.\n";
-              cout << "You have to start from the beginning, sorry";
-              break;
-            case assembler_c::ERR_PUZZLE_UNHANDABLE:
-              cout << "Something went wrong the program can not solve your puzzle definitions.\n";
-              cout << "You should send the puzzle file to the programmer!";
-              break;
-            case assembler_c::ERR_NONE:
-              break;
-          }
-          break;
-        case solveThread_c::ACT_FINISHED:
-          cout << "\rdone";
-          break;
-      }
-
-      cout.flush();
-
+    if (assmThread.currentAction() == solveThread_c::ACT_ERROR) {
+      cout << "Exception in Solver\n";
+      cout << " file      : " << assmThread.getAssertException().file;
+      cout << " function  : " << assmThread.getAssertException().function;
+      cout << " line      : " << assmThread.getAssertException().line;
+      cout << " expression: " << assmThread.getAssertException().expr;
+      return 1;
     }
   }
 

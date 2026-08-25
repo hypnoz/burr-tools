@@ -794,11 +794,11 @@ int assembly_c::comparePieces(const assembly_c * b) const {
 voxel_c * assembly_c::createSpace(const problem_c & puz) const {
 
   std::vector<voxel_c *>pieces;
-  pieces.resize(placements.size());
+  pieces.resize(placements.size(), 0);
 
-  int maxX = 1;
-  int maxY = 1;
-  int maxZ = 1;
+  int minX = 0, minY = 0, minZ = 0;
+  int maxX = 1, maxY = 1, maxZ = 1;
+  bool any = false;
 
   // now iterate over all shapes in the assembly and find out their placement
   // to create the proper sized result voxel space
@@ -815,15 +815,44 @@ voxel_c * assembly_c::createSpace(const problem_c & puz) const {
       int dy = (int)placements[i].ypos - (int)pc->getHy();
       int dz = (int)placements[i].zpos - (int)pc->getHz();
 
-      if ((int)pc->getX()+dx > maxX) maxX = (int)pc->getX()+dx;
-      if ((int)pc->getY()+dy > maxY) maxY = (int)pc->getY()+dy;
-      if ((int)pc->getZ()+dz > maxZ) maxZ = (int)pc->getZ()+dz;
+      int x1 = dx;
+      int y1 = dy;
+      int z1 = dz;
+      int x2 = (int)pc->getX() + dx;
+      int y2 = (int)pc->getY() + dy;
+      int z2 = (int)pc->getZ() + dz;
+
+      if (!any) {
+        minX = x1;
+        minY = y1;
+        minZ = z1;
+        maxX = x2;
+        maxY = y2;
+        maxZ = z2;
+        any = true;
+      } else {
+        if (x1 < minX) minX = x1;
+        if (y1 < minY) minY = y1;
+        if (z1 < minZ) minZ = z1;
+        if (x2 > maxX) maxX = x2;
+        if (y2 > maxY) maxY = y2;
+        if (z2 > maxZ) maxZ = z2;
+      }
 
       pieces[i] = pc;
     }
 
-  // create a shape identical in size with the result shape of the problem
-  voxel_c * res = puz.getPuzzle().getGridType()->getVoxel(maxX, maxY, maxZ, 0);
+  if (!any)
+    return puz.getPuzzle().getGridType()->getVoxel(1, 1, 1, 0);
+
+  unsigned int sx = (unsigned int)(maxX - minX);
+  unsigned int sy = (unsigned int)(maxY - minY);
+  unsigned int sz = (unsigned int)(maxZ - minZ);
+  if (sx == 0) sx = 1;
+  if (sy == 0) sy = 1;
+  if (sz == 0) sz = 1;
+
+  voxel_c * res = puz.getPuzzle().getGridType()->getVoxel(sx, sy, sz, 0);
   res->skipRecalcBoundingBox(true);
 
   // now iterate over all shapes in the assembly and place them into the result
@@ -832,15 +861,15 @@ voxel_c * assembly_c::createSpace(const problem_c & puz) const {
 
       voxel_c * pc = pieces[i];
 
-      int dx = (int)placements[i].xpos - (int)pc->getHx();
-      int dy = (int)placements[i].ypos - (int)pc->getHy();
-      int dz = (int)placements[i].zpos - (int)pc->getHz();
+      int dx = (int)placements[i].xpos - (int)pc->getHx() - minX;
+      int dy = (int)placements[i].ypos - (int)pc->getHy() - minY;
+      int dz = (int)placements[i].zpos - (int)pc->getHz() - minZ;
 
       for (unsigned int x = 0; x < pc->getX(); x++)
         for (unsigned int y = 0; y < pc->getY(); y++)
           for (unsigned int z = 0; z < pc->getZ(); z++) {
             if (pc->getState(x, y, z) != voxel_c::VX_EMPTY)
-              res->set(x+dx, y+dy, z+dz, pc->get(x, y, z));
+              res->set(x + (unsigned int)dx, y + (unsigned int)dy, z + (unsigned int)dz, pc->get(x, y, z));
           }
 
       delete pc;

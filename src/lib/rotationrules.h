@@ -27,12 +27,12 @@
  * Clearance / validity rules for 90° piece rotations during disassembly.
  *
  * - End position must not overlap other pieces
- * - Along the rotation axis, static (other-piece) neighbours on each in-plane
- *   axis are checked across *all* layers: if one opposite slot is occupied on
- *   any layer, the other opposite slot may not be occupied on any layer
- *   (e.g. +X on layer 1 forbids -X on every layer). Same for Y (or the other
- *   in-plane pair). Example layer grid 0..15: rotating on-axis voxel at 7 with
- *   static at 3 and 11 is invalid even if those statics sit on different layers.
+ * - Along the rotation axis, on each layer where the moving piece face-touches
+ *   another piece, consider only pivot-column moving voxels (same in-plane
+ *   coords as the pivot). Collect static ±U/±V face neighbours of those cells.
+ *   If one touching layer has static on -U and a different touching layer has
+ *   static on +U (same for V), reject. Same-layer opposites are ignored.
+ *   Layers with no face contact to the other piece are skipped.
  * - Arc sweep: sample the continuous 90° path so a voxel cannot clip through
  *   another piece mid-turn even when start and end are clear
  *
@@ -67,6 +67,25 @@ public:
                              const cell_t & pivot,
                              unsigned int axis,
                              unsigned int sense) const;
+
+  /**
+   * Collect cells useful for Debug Rotations visualisation of one candidate.
+   *
+   * @param outBlocking    static cells that currently violate arc-sweep or
+   *                       participate in an axis-cross opposition (hard conflicts)
+   * @param outClearance   mid-path lattice cells that are not part of the moving
+   *                       piece at start — empty cells here would block if filled
+ * @param outRestricted  empty ±in-plane slots face-adjacent to a moving voxel
+ *                       on a layer that touches the other piece
+   */
+  void collectDebugConflictCells(const std::vector<cell_t> & occupied,
+                                 const std::vector<cell_t> & startCells,
+                                 const cell_t & pivot,
+                                 unsigned int axis,
+                                 unsigned int sense,
+                                 std::vector<cell_t> & outBlocking,
+                                 std::vector<cell_t> & outClearance,
+                                 std::vector<cell_t> & outRestricted) const;
 
 private:
 

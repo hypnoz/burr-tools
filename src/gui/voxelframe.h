@@ -123,6 +123,10 @@ class voxelFrame_c : public Fl_Gl_Window {
     void updatePositions(piecePositions_c *shifting);
     void updatePositionsOverlap(piecePositions_c *shifting);
     void dimStaticPieces(piecePositions_c *shifting);
+
+    /** When true, rotation animation highlights clearance / blocking cells. */
+    void setDebugRotations(bool on);
+    bool getDebugRotations(void) const { return debugRotations; }
     void showAssemblerState(const problem_c * puz, const assembly_c * assm);
     void updateVisibility(PieceVisibility * pcvis);
     void showProblem(const puzzle_c * puz, unsigned int problem, unsigned int selShape);
@@ -227,11 +231,20 @@ class voxelFrame_c : public Fl_Gl_Window {
 
     bool _useLightning;
 
+    bool debugRotations;
+    std::vector<int> debugBlockX, debugBlockY, debugBlockZ;
+    std::vector<int> debugClearX, debugClearY, debugClearZ;
+    std::vector<int> debugRestrictX, debugRestrictY, debugRestrictZ;
+
     // when picking shapes, this is the coordinate to use
     int pickx, picky;
 
     void draw();
     int handle(int event);
+    void drawDebugRotationCells();
+    void drawDebugRotationLegend();
+    void clearDebugRotationCells();
+    void updateDebugRotationCells(piecePositions_c *shifting);
 
     bool insideVisible;
 };

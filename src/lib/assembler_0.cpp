@@ -335,7 +335,7 @@ assembler_0_c::assembler_0_c(const problem_c & prob) :
   problem(prob),
   pos(0), rows(0), columns(0),
   reducePiece(0),
-  avoidTransformedAssemblies(0), avoidTransformedMirror(0)
+  avoidTransformedAssemblies(0), rotationFilterActive(0), avoidTransformedMirror(0)
 {
 }
 
@@ -495,8 +495,7 @@ int assembler_0_c::prepare(void) {
       }
     }
 
-    if (sym->symmetriesLeft(resultSym, problem.getPartShape(symBreakerShape)->selfSymmetries()))
-      checkForTransformedAssemblies(symBreakerShape, 0);
+    checkForTransformedAssemblies(symBreakerShape, 0);
 
     if (sym->symmetryContainsMirror(resultSym)) {
       /* we need to to the mirror check here, and initialise the mirror
@@ -751,6 +750,21 @@ assembler_0_c::errState assembler_0_c::createMatrix(bool keepMirror, bool keepRo
 
   errorsState = ERR_NONE;
   return errorsState;
+}
+
+void assembler_0_c::applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool comp) {
+
+  complete = comp;
+
+  if (keepMirror) {
+    delete avoidTransformedMirror;
+    avoidTransformedMirror = 0;
+  }
+
+  if (keepRotations)
+    avoidTransformedAssemblies = false;
+  else if (rotationFilterActive)
+    avoidTransformedAssemblies = true;
 }
 
 /* remove column from array, and also all the rows, where the column is one */
@@ -1232,6 +1246,7 @@ assembly_c * assembler_0_c::getAssembly(void) {
 
 void assembler_0_c::checkForTransformedAssemblies(unsigned int pivot, mirrorInfo_c * mir) {
   avoidTransformedAssemblies = true;
+  rotationFilterActive = true;
   avoidTransformedPivot = pivot;
   avoidTransformedMirror = mir;
 }
@@ -1244,11 +1259,19 @@ void assembler_0_c::solution(void) {
 
     assembly_c * assembly = getAssembly();
 
-    if (avoidTransformedAssemblies && assembly->smallerRotationExists(problem, avoidTransformedPivot, avoidTransformedMirror, complete))
-      delete assembly;
-    else {
+    if (avoidTransformedAssemblies) {
+      bool drop = false;
+      for (unsigned int pivot = 0; pivot < problem.getNumberOfPieces(); pivot++)
+        if (assembly->smallerRotationExists(problem, pivot, 0, true)) {
+          drop = true;
+          break;
+        }
+      if (drop)
+        delete assembly;
+      else
+        getCallback()->assembly(assembly);
+    } else
       getCallback()->assembly(assembly);
-    }
   }
 }
 

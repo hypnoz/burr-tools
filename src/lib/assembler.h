@@ -89,6 +89,9 @@ public:
    */
   virtual errState createMatrix(bool /*keepMirror*/, bool /*keepRotations*/, bool /*complete*/);
 
+  /** Re-apply mirror/rotation filter flags after createMatrix when reusing an assembler. */
+  virtual void applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool complete);
+
   /**
    * when createMatrix returns an error you can call this function to
    * find out which piece is involved, or other additional information

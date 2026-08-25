@@ -447,14 +447,20 @@ void mainWindow_c::cb_pieceEdit(VoxelEditGroup_c* o) {
 
   switch (o->getReason()) {
   case gridEditor_c::RS_MOUSEMOVE:
-    if (o->getMouse())
+    if (o->getMouse()) {
       View3D->getView()->setMarker(o->getMouseX1(), o->getMouseY1(), o->getMouseX2(), o->getMouseY2(), o->getMouseZ(), editSymmetries);
-    else
+      StatPieceInfo(PcSel->getSelection(), true, o->getCursorX(), o->getCursorY(), o->getCursorZ());
+    } else {
       View3D->getView()->hideMarker();
+      StatPieceInfo(PcSel->getSelection());
+    }
     break;
   case gridEditor_c::RS_CHANGESQUARE:
     View3D->getView()->showSingleShape(puzzle, PcSel->getSelection());
-    StatPieceInfo(PcSel->getSelection());
+    if (o->getMouse())
+      StatPieceInfo(PcSel->getSelection(), true, o->getCursorX(), o->getCursorY(), o->getCursorZ());
+    else
+      StatPieceInfo(PcSel->getSelection());
     changeShape(PcSel->getSelection());
     changed = true;
     break;
@@ -1036,6 +1042,90 @@ void mainWindow_c::cb_SolutionAnim(Fl_Value_Slider* o) {
     disassemble->setStep(o->value(), config.useBlendedRemoving(), true);
     View3D->getView()->updatePositions(disassemble);
   }
+}
+
+void mainWindow_c::cb_DebugRotations(void) {
+  View3D->getView()->setDebugRotations(DebugRotations->value() != 0);
+  if (disassemble && SolutionAnim) {
+    disassemble->setStep(SolutionAnim->value(), config.useBlendedRemoving(), true);
+    View3D->getView()->updatePositions(disassemble);
+  }
+}
+
+void mainWindow_c::updateSolverOptionCheckboxes(void) {
+
+  const bool justCount = JustCount->value() != 0;
+  const bool justLevels = DropDisassemblies->value() != 0;
+  const bool canDisassemble =
+      (ggt->getGridType()->getCapabilities() & gridType_c::CAP_DISASSEMBLE) != 0;
+
+  if (justCount) {
+    DropDisassemblies->value(0);
+    DropDisassemblies->deactivate();
+    SolveDisasm->value(0);
+    SolveDisasm->deactivate();
+    CheckRotations->value(0);
+    CheckRotations->deactivate();
+    DebugRotations->value(0);
+    DebugRotations->deactivate();
+    JustCount->activate();
+  } else if (justLevels) {
+    JustCount->value(0);
+    JustCount->deactivate();
+    DropDisassemblies->activate();
+    if (canDisassemble) {
+      SolveDisasm->value(1);
+      SolveDisasm->deactivate();
+    } else {
+      SolveDisasm->value(0);
+      SolveDisasm->deactivate();
+    }
+    /* Just Levels: Check Rotations stays available; Debug Rotations stays off. */
+    CheckRotations->activate();
+    DebugRotations->value(0);
+    DebugRotations->deactivate();
+  } else {
+    JustCount->activate();
+    DropDisassemblies->activate();
+
+    if (canDisassemble)
+      SolveDisasm->activate();
+    else {
+      SolveDisasm->value(0);
+      SolveDisasm->deactivate();
+    }
+
+    if (SolveDisasm->value() == 0 || !canDisassemble) {
+      CheckRotations->value(0);
+      CheckRotations->deactivate();
+      DebugRotations->value(0);
+      DebugRotations->deactivate();
+    } else {
+      CheckRotations->activate();
+      if (CheckRotations->value() != 0)
+        DebugRotations->activate();
+      else {
+        DebugRotations->value(0);
+        DebugRotations->deactivate();
+      }
+    }
+  }
+
+  View3D->getView()->setDebugRotations(DebugRotations->value() != 0);
+}
+
+static void cb_SolverOptions_stub(Fl_Widget* o, void* v) {
+  ((mainWindow_c*)v)->cb_SolverOptions(o);
+}
+void mainWindow_c::cb_SolverOptions(Fl_Widget* o) {
+  /* When Just Levels is newly checked, force Check Rotations off (but keep it enabled). */
+  if (o == DropDisassemblies && DropDisassemblies->value() != 0)
+    CheckRotations->value(0);
+
+  updateSolverOptionCheckboxes();
+
+  if (o == DebugRotations)
+    cb_DebugRotations();
 }
 
 static void cb_SrtFind_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SortSolutions(0); }
@@ -1793,14 +1883,25 @@ void mainWindow_c::cb_About(void) {
 }
 
 void mainWindow_c::StatPieceInfo(unsigned int pc) {
+  StatPieceInfo(pc, false, 0, 0, 0);
+}
+
+void mainWindow_c::StatPieceInfo(unsigned int pc, bool withCoords, int x, int y, int z) {
 
   if (pc < puzzle->getNumberOfShapes()) {
-    char txt[100];
+    char txt[160];
 
     unsigned int fx = puzzle->getShape(pc)->countState(voxel_c::VX_FILLED);
     unsigned int vr = puzzle->getShape(pc)->countState(voxel_c::VX_VARIABLE);
 
-    snprintf(txt, 100, "Shape S%i has %i voxels (%i fixed, %i variable)", pc+1, fx+vr, fx, vr);
+    if (withCoords)
+      snprintf(txt, sizeof(txt),
+               "Shape S%i has %i voxels (%i fixed, %i variable) (Coordinates X=%i, Y=%i, Z=%i)",
+               pc+1, fx+vr, fx, vr, x, y, z);
+    else
+      snprintf(txt, sizeof(txt),
+               "Shape S%i has %i voxels (%i fixed, %i variable)",
+               pc+1, fx+vr, fx, vr);
     StatusLine->setText(txt);
   }
 }
@@ -2614,6 +2715,8 @@ void mainWindow_c::updateInterface(void) {
         SolveDisasm->value(0);
       }
 
+      updateSolverOptionCheckboxes();
+
       if (ggt->getGridType()->getCapabilities() & gridType_c::CAP_DISASSEMBLE &&
           !assmThread &&
           solutionProblem->getSelection() < puzzle->getNumberOfProblems() &&
@@ -3423,18 +3526,29 @@ void mainWindow_c::CreateSolveTab(void) {
     SolveDisasm = new LFl_Check_Button("Disassemble", 0, 0, 1, 1);
     SolveDisasm->tooltip(" Do also try to disassemble the assembled puzzles. Only puzzles that can be disassembled will be added to solutions ");
     SolveDisasm->clear_visible_focus();
+    SolveDisasm->callback(cb_SolverOptions_stub, this);
 
     CheckRotations = new LFl_Check_Button("Check Rotations", 0, 1, 1, 1);
     CheckRotations->tooltip(" Also try 90 degree piece rotations (brick grids) during disassembly. Requires Disassemble. ");
     CheckRotations->clear_visible_focus();
+    CheckRotations->callback(cb_SolverOptions_stub, this);
 
-    JustCount = new LFl_Check_Button("Just Count", 0, 2, 1, 1);
+    DebugRotations = new LFl_Check_Button("Debug Rotations", 0, 2, 1, 1);
+    DebugRotations->tooltip(" During solution animation, highlight rotation clearance: cyan = sweep volume, yellow = empty axis-cross danger slots, magenta = hard conflicts. ");
+    DebugRotations->clear_visible_focus();
+    DebugRotations->callback(cb_SolverOptions_stub, this);
+
+    JustCount = new LFl_Check_Button("Just Count", 0, 3, 1, 1);
     JustCount->tooltip(" Don\'t save the solutions, just count the number of them ");
     JustCount->clear_visible_focus();
+    JustCount->callback(cb_SolverOptions_stub, this);
 
-    DropDisassemblies = new LFl_Check_Button("Just Levels", 0, 3, 1, 1);
+    DropDisassemblies = new LFl_Check_Button("Just Levels", 0, 4, 1, 1);
     DropDisassemblies->tooltip(" Don\'t save the Disassemblies, just the information about them ");
     DropDisassemblies->clear_visible_focus();
+    DropDisassemblies->callback(cb_SolverOptions_stub, this);
+
+    updateSolverOptionCheckboxes();
 
     CompleteRotations = new LFl_Check_Button("Deep Symmetry Check", 1, 0, 1, 1);
     CompleteRotations->tooltip(" Do expensive and thorough rotation check, eliminating translations and rotations not in symmetry of the result shape ");

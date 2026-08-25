@@ -96,7 +96,7 @@ class mainWindow_c : public LFl_Double_Window {
   ButtonGroup_c *editMode;
 
   layouter_c *TabSolve;
-  Fl_Check_Button *SolveDisasm, *CheckRotations, *JustCount, *DropDisassemblies, *KeepMirrors, *KeepRotations, *CompleteRotations;
+  Fl_Check_Button *SolveDisasm, *CheckRotations, *DebugRotations, *JustCount, *DropDisassemblies, *KeepMirrors, *KeepRotations, *CompleteRotations;
 
   FlatButton *BtnPrepare, *BtnStart, *BtnCont, *BtnStop, *BtnPlacement, *BtnStep, *BtnMovement;
   FlatButton *BtnNewShape, *BtnDelShape, *BtnCpyShape, *BtnRenShape, *BtnShapeLeft, *BtnShapeRight, *BtnWeightInc, *BtnWeightDec;
@@ -157,6 +157,7 @@ class mainWindow_c : public LFl_Double_Window {
   void Small3DView(void);
 
   void StatPieceInfo(unsigned int pc);
+  void StatPieceInfo(unsigned int pc, bool withCoords, int x, int y, int z);
   void StatProblemInfo(unsigned int pr);
 
   void changeShape(unsigned int nr);
@@ -260,6 +261,9 @@ public:
 
   void cb_SolutionSel(Fl_Value_Slider*);
   void cb_SolutionAnim(Fl_Value_Slider*);
+  void cb_DebugRotations(void);
+  void cb_SolverOptions(Fl_Widget* o);
+  void updateSolverOptionCheckboxes(void);
 
   void cb_PcVis(void);
 

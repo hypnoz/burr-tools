@@ -506,6 +506,8 @@ public:
 
 private:
 
+  void dedupeRotatedAssemblies(void);
+
   // no copying and assigning
   problem_c(const problem_c&);
   void operator=(const problem_c&);

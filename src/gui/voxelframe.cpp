@@ -31,6 +31,7 @@
 #include "../lib/assembly.h"
 #include "../lib/disasmtomoves.h"
 #include "../lib/solution.h"
+#include "../lib/rotationrules.h"
 
 #include "../halfedge/polyhedron.h"
 
@@ -56,6 +57,7 @@ voxelFrame_c::voxelFrame_c(int x,int y,int w,int h) :
   size(10), cb(0),
   colors(pieceColor),
   _useLightning(true),
+  debugRotations(false),
   pickx(-1),
   insideVisible(false)
 {
@@ -760,6 +762,8 @@ void voxelFrame_c::drawVoxelSpace() {
 
   glPopName();
   glDepthMask(GL_TRUE);
+
+  drawDebugRotationCells();
 }
 
 unsigned int voxelFrame_c::addSpace(const voxel_c * vx) {
@@ -799,6 +803,7 @@ void voxelFrame_c::clearSpaces(void) {
   }
 
   shapes.clear();
+  clearDebugRotationCells();
 }
 
 void voxelFrame_c::setSpaceColor(unsigned int nr, float r, float g, float b, float a) {
@@ -1355,7 +1360,283 @@ void voxelFrame_c::updatePositions(piecePositions_c *shifting) {
     }
   }
 
+  updateDebugRotationCells(shifting);
+
   redraw();
+}
+
+void voxelFrame_c::setDebugRotations(bool on) {
+  if (debugRotations == on)
+    return;
+  debugRotations = on;
+  if (!debugRotations)
+    clearDebugRotationCells();
+  redraw();
+}
+
+void voxelFrame_c::clearDebugRotationCells() {
+  debugBlockX.clear(); debugBlockY.clear(); debugBlockZ.clear();
+  debugClearX.clear(); debugClearY.clear(); debugClearZ.clear();
+  debugRestrictX.clear(); debugRestrictY.clear(); debugRestrictZ.clear();
+}
+
+void voxelFrame_c::updateDebugRotationCells(piecePositions_c *shifting) {
+
+  clearDebugRotationCells();
+  if (!debugRotations || !shifting || shapes.empty())
+    return;
+
+  /* Last shape is the unused intersection slot; pieces are [0, shapes.size()-1). */
+  if (shapes.size() < 2)
+    return;
+
+  int rotating = -1;
+  float ang = 0, ax = 0, ay = 0, az = 0, px = 0, py = 0, pz = 0;
+  for (unsigned int p = 0; p + 1 < shapes.size(); p++) {
+    if (shifting->getRotationAnim(p, &ang, &ax, &ay, &az, &px, &py, &pz)) {
+      rotating = (int)p;
+      break;
+    }
+  }
+  if (rotating < 0)
+    return;
+
+  unsigned int axis = 2;
+  if (ax != 0) axis = 0;
+  else if (ay != 0) axis = 1;
+  unsigned int sense = (ang < 0) ? 1 : 0;
+  rotationRules_c::cell_t pivot((int)floor(px), (int)floor(py), (int)floor(pz));
+
+  std::vector<rotationRules_c::cell_t> startCells;
+  std::vector<rotationRules_c::cell_t> occupied;
+
+  for (unsigned int p = 0; p + 1 < shapes.size(); p++) {
+    if (!shapes[p].shape) continue;
+    if (shifting->getA(p) <= 0) continue;
+    if (fabs(shifting->getX(p)) > 10000 ||
+        fabs(shifting->getY(p)) > 10000 ||
+        fabs(shifting->getZ(p)) > 10000) continue;
+
+    int spx = (int)floor(shapes[p].x + 1e-6);
+    int spy = (int)floor(shapes[p].y + 1e-6);
+    int spz = (int)floor(shapes[p].z + 1e-6);
+    int hx = (int)shapes[p].shape->getHx();
+    int hy = (int)shapes[p].shape->getHy();
+    int hz = (int)shapes[p].shape->getHz();
+
+    for (unsigned int z = 0; z < shapes[p].shape->getZ(); z++)
+      for (unsigned int y = 0; y < shapes[p].shape->getY(); y++)
+        for (unsigned int x = 0; x < shapes[p].shape->getX(); x++)
+          if (shapes[p].shape->isFilled(x, y, z)) {
+            rotationRules_c::cell_t c(spx - hx + (int)x,
+                                      spy - hy + (int)y,
+                                      spz - hz + (int)z);
+            if ((int)p == rotating)
+              startCells.push_back(c);
+            else
+              occupied.push_back(c);
+          }
+  }
+
+  if (startCells.empty())
+    return;
+
+  std::vector<rotationRules_c::cell_t> blocking, clearance, restricted;
+  rotationRules_c rules;
+  rules.collectDebugConflictCells(occupied, startCells, pivot, axis, sense,
+                                  blocking, clearance, restricted);
+
+  for (unsigned int i = 0; i < blocking.size(); i++) {
+    debugBlockX.push_back(blocking[i].x);
+    debugBlockY.push_back(blocking[i].y);
+    debugBlockZ.push_back(blocking[i].z);
+  }
+  for (unsigned int i = 0; i < clearance.size(); i++) {
+    debugClearX.push_back(clearance[i].x);
+    debugClearY.push_back(clearance[i].y);
+    debugClearZ.push_back(clearance[i].z);
+  }
+  for (unsigned int i = 0; i < restricted.size(); i++) {
+    debugRestrictX.push_back(restricted[i].x);
+    debugRestrictY.push_back(restricted[i].y);
+    debugRestrictZ.push_back(restricted[i].z);
+  }
+}
+
+static void drawUnitCubeFaces(float x, float y, float z, float inset) {
+  float x0 = x + inset, x1 = x + 1 - inset;
+  float y0 = y + inset, y1 = y + 1 - inset;
+  float z0 = z + inset, z1 = z + 1 - inset;
+
+  glBegin(GL_QUADS);
+  /* -X / +X */
+  glVertex3f(x0, y0, z0); glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1); glVertex3f(x0, y0, z1);
+  glVertex3f(x1, y0, z0); glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y1, z0);
+  /* -Y / +Y */
+  glVertex3f(x0, y0, z0); glVertex3f(x0, y0, z1); glVertex3f(x1, y0, z1); glVertex3f(x1, y0, z0);
+  glVertex3f(x0, y1, z0); glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z1);
+  /* -Z / +Z */
+  glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z0); glVertex3f(x1, y1, z0); glVertex3f(x0, y1, z0);
+  glVertex3f(x0, y0, z1); glVertex3f(x0, y1, z1); glVertex3f(x1, y1, z1); glVertex3f(x1, y0, z1);
+  glEnd();
+}
+
+static void drawUnitCubeWire(float x, float y, float z, float inset) {
+  float x0 = x + inset, x1 = x + 1 - inset;
+  float y0 = y + inset, y1 = y + 1 - inset;
+  float z0 = z + inset, z1 = z + 1 - inset;
+
+  glBegin(GL_LINES);
+  glVertex3f(x0, y0, z0); glVertex3f(x1, y0, z0);
+  glVertex3f(x1, y0, z0); glVertex3f(x1, y1, z0);
+  glVertex3f(x1, y1, z0); glVertex3f(x0, y1, z0);
+  glVertex3f(x0, y1, z0); glVertex3f(x0, y0, z0);
+  glVertex3f(x0, y0, z1); glVertex3f(x1, y0, z1);
+  glVertex3f(x1, y0, z1); glVertex3f(x1, y1, z1);
+  glVertex3f(x1, y1, z1); glVertex3f(x0, y1, z1);
+  glVertex3f(x0, y1, z1); glVertex3f(x0, y0, z1);
+  glVertex3f(x0, y0, z0); glVertex3f(x0, y0, z1);
+  glVertex3f(x1, y0, z0); glVertex3f(x1, y0, z1);
+  glVertex3f(x1, y1, z0); glVertex3f(x1, y1, z1);
+  glVertex3f(x0, y1, z0); glVertex3f(x0, y1, z1);
+  glEnd();
+}
+
+void voxelFrame_c::drawDebugRotationCells() {
+
+  if (!debugRotations)
+    return;
+  if (debugBlockX.empty() && debugClearX.empty() && debugRestrictX.empty())
+    return;
+  if (trans != CenterTranslateRoateScale)
+    return;
+
+  if (_useLightning) glDisable(GL_LIGHTING);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+  glDepthMask(GL_FALSE);
+
+  glPushMatrix();
+  rotater->addTransform();
+  glTranslatef(-centerX, -centerY, -centerZ);
+
+  /* Clearance volume: bright cyan translucent */
+  glColor4f(0.1f, 0.95f, 1.0f, 0.35f);
+  for (unsigned int i = 0; i < debugClearX.size(); i++)
+    drawUnitCubeFaces((float)debugClearX[i], (float)debugClearY[i], (float)debugClearZ[i], 0.06f);
+
+  /* Empty axis-cross danger slots: yellow fill + wire so empty cells are obvious */
+  glColor4f(1.0f, 0.85f, 0.05f, 0.45f);
+  for (unsigned int i = 0; i < debugRestrictX.size(); i++)
+    drawUnitCubeFaces((float)debugRestrictX[i], (float)debugRestrictY[i],
+                      (float)debugRestrictZ[i], 0.04f);
+  glColor4f(1.0f, 0.55f, 0.0f, 1.0f);
+  glLineWidth(2.0f);
+  for (unsigned int i = 0; i < debugRestrictX.size(); i++)
+    drawUnitCubeWire((float)debugRestrictX[i], (float)debugRestrictY[i],
+                     (float)debugRestrictZ[i], 0.02f);
+  glLineWidth(1.0f);
+
+  /* Hard blockers: opaque magenta */
+  glColor4f(1.0f, 0.05f, 0.85f, 0.75f);
+  for (unsigned int i = 0; i < debugBlockX.size(); i++)
+    drawUnitCubeFaces((float)debugBlockX[i], (float)debugBlockY[i], (float)debugBlockZ[i], 0.02f);
+
+  glPopMatrix();
+
+  glDepthMask(GL_TRUE);
+  if (_useLightning) glEnable(GL_LIGHTING);
+}
+
+static void drawLegendSwatch(int x, int y, int size, float r, float g, float b, float a) {
+  glColor4f(r, g, b, a);
+  glBegin(GL_QUADS);
+  glVertex2i(x, y);
+  glVertex2i(x + size, y);
+  glVertex2i(x + size, y + size);
+  glVertex2i(x, y + size);
+  glEnd();
+  glColor4f(0.2f, 0.2f, 0.2f, 0.9f);
+  glLineWidth(1.0f);
+  glBegin(GL_LINE_LOOP);
+  glVertex2i(x, y);
+  glVertex2i(x + size, y);
+  glVertex2i(x + size, y + size);
+  glVertex2i(x, y + size);
+  glEnd();
+}
+
+void voxelFrame_c::drawDebugRotationLegend() {
+
+  if (!debugRotations)
+    return;
+
+  const int margin = 8;
+  const int pad = 8;
+  const int swatch = 11;
+  const int lineGap = 4;
+  const int lineH = 14;
+  const int boxW = 250;
+  const int boxH = pad + 16 + lineGap + 3 * (lineH + lineGap) + pad;
+  const int boxX = w() - margin - boxW;
+  const int boxY = margin;
+
+  glDisable(GL_LIGHTING);
+  glDisable(GL_DEPTH_TEST);
+  glEnable(GL_BLEND);
+  glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+  glMatrixMode(GL_PROJECTION);
+  glPushMatrix();
+  glLoadIdentity();
+  glOrtho(0, w(), h(), 0, -1, 1);
+  glMatrixMode(GL_MODELVIEW);
+  glPushMatrix();
+  glLoadIdentity();
+
+  glColor4f(0.08f, 0.08f, 0.10f, 0.82f);
+  glBegin(GL_QUADS);
+  glVertex2i(boxX, boxY);
+  glVertex2i(boxX + boxW, boxY);
+  glVertex2i(boxX + boxW, boxY + boxH);
+  glVertex2i(boxX, boxY + boxH);
+  glEnd();
+
+  glColor4f(0.55f, 0.55f, 0.55f, 0.95f);
+  glLineWidth(1.0f);
+  glBegin(GL_LINE_LOOP);
+  glVertex2i(boxX, boxY);
+  glVertex2i(boxX + boxW, boxY);
+  glVertex2i(boxX + boxW, boxY + boxH);
+  glVertex2i(boxX, boxY + boxH);
+  glEnd();
+
+  const int textX = boxX + pad + swatch + 6;
+  const int row1Y = boxY + pad + 16 + lineGap;
+  const int row2Y = row1Y + lineH + lineGap;
+  const int row3Y = row2Y + lineH + lineGap;
+
+  drawLegendSwatch(boxX + pad, row1Y, swatch, 0.1f, 0.95f, 1.0f, 0.55f);
+  drawLegendSwatch(boxX + pad, row2Y, swatch, 1.0f, 0.85f, 0.05f, 0.65f);
+  drawLegendSwatch(boxX + pad, row3Y, swatch, 1.0f, 0.05f, 0.85f, 0.75f);
+
+  /* Text must use gl_draw — fl_draw does not paint into Fl_Gl_Window. */
+  glDisable(GL_TEXTURE_2D);
+  glColor3f(1.0f, 1.0f, 1.0f);
+  gl_font(FL_HELVETICA_BOLD, 12);
+  gl_draw("Rotation debug", boxX + pad, boxY + pad + 12);
+  gl_font(FL_HELVETICA, 11);
+  gl_draw("Cyan: arc sweep clearance", textX, row1Y + swatch - 1);
+  gl_draw("Yellow: axis-cross slot (empty)", textX, row2Y + swatch - 1);
+  gl_draw("Magenta: hard conflict", textX, row3Y + swatch - 1);
+
+  glPopMatrix();
+  glMatrixMode(GL_PROJECTION);
+  glPopMatrix();
+  glMatrixMode(GL_MODELVIEW);
+
+  glEnable(GL_DEPTH_TEST);
+  if (_useLightning) glEnable(GL_LIGHTING);
 }
 
 void voxelFrame_c::updatePositionsOverlap(piecePositions_c *shifting) {
@@ -1638,6 +1919,8 @@ void voxelFrame_c::draw() {
   if (colors == anaglyphColor || colors == anaglyphColorL) {
     glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
   }
+
+  drawDebugRotationLegend();
 
   if (cb)
     cb->PostDraw();
