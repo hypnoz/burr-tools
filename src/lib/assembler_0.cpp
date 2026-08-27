@@ -1259,19 +1259,11 @@ void assembler_0_c::solution(void) {
 
     assembly_c * assembly = getAssembly();
 
-    if (avoidTransformedAssemblies) {
-      bool drop = false;
-      for (unsigned int pivot = 0; pivot < problem.getNumberOfPieces(); pivot++)
-        if (assembly->smallerRotationExists(problem, pivot, 0, true)) {
-          drop = true;
-          break;
-        }
-      if (drop)
-        delete assembly;
-      else
-        getCallback()->assembly(assembly);
-    } else
+    if (avoidTransformedAssemblies && assembly->smallerRotationExists(problem, avoidTransformedPivot, avoidTransformedMirror, complete))
+      delete assembly;
+    else {
       getCallback()->assembly(assembly);
+    }
   }
 }
 

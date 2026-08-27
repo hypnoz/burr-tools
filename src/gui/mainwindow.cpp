@@ -1016,6 +1016,9 @@ void mainWindow_c::cb_BtnCont(bool prep_only) {
   } else {
 
     updateInterface();
+    TimeEst->value("unknown");
+    TimeUsed->show();
+    TimeEst->show();
     changed = true;
   }
 }
@@ -1132,6 +1135,27 @@ static void cb_SrtFind_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_
 static void cb_SrtLevel_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SortSolutions(1); }
 static void cb_SrtMoves_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SortSolutions(2); }
 static void cb_SrtPieces_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SortSolutions(3); }
+static void cb_SortMethod_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SortMethod(); }
+void mainWindow_c::cb_SortMethod(void) {
+
+  if (assmThread)
+    return;
+
+  unsigned int prob = solutionProblem->getSelection();
+
+  if (prob >= puzzle->getNumberOfProblems())
+    return;
+
+  problem_c * pr = puzzle->getProblem(prob);
+
+  if (pr->getNumberOfSavedSolutions() < 2)
+    return;
+
+  pr->sortSolutionsBySolverMethod(sortMethod->value());
+  SolutionSel->value(1);
+  activateSolution(prob, 0);
+  updateInterface();
+}
 void mainWindow_c::cb_SortSolutions(unsigned int by) {
   unsigned int prob = solutionProblem->getSelection();
 
@@ -2167,6 +2191,25 @@ void mainWindow_c::activateProblem(unsigned int prob) {
   SolutionEmpty = true;
 }
 
+static void setMovesRotationsMetrics(Fl_Output * movesOut, Fl_Output * rotsOut, const disassembly_c * da)
+{
+  if (!da) {
+    movesOut->value("");
+    rotsOut->value("");
+    movesOut->hide();
+    rotsOut->hide();
+    return;
+  }
+
+  char buf[32];
+  snprintf(buf, sizeof(buf), "%u", da->sumMoves());
+  movesOut->value(buf);
+  snprintf(buf, sizeof(buf), "%u", da->sumRotations());
+  rotsOut->value(buf);
+  movesOut->show();
+  rotsOut->show();
+}
+
 void mainWindow_c::activateSolution(unsigned int prob, unsigned int num) {
 
   if (disassemble) {
@@ -2185,6 +2228,9 @@ void mainWindow_c::activateSolution(unsigned int prob, unsigned int num) {
     PcVis->setAssembly(pr->getSavedSolution(num)->getAssembly());
     AssemblyNumber->show();
     AssemblyNumber->value(pr->getSavedSolution(num)->getAssemblyNumber()+1);
+
+    const disassembly_c * disassemblyMetrics = pr->getSavedSolution(num)->getDisassemblyInfo();
+    setMovesRotationsMetrics(MovesMetric, RotationsMetric, disassemblyMetrics);
 
     if (pr->getSavedSolution(num)->getDisassembly()) {
       SolutionAnim->show();
@@ -2264,6 +2310,7 @@ void mainWindow_c::activateSolution(unsigned int prob, unsigned int num) {
 
       AssemblyNumber->hide();
       SolutionNumber->hide();
+      setMovesRotationsMetrics(MovesMetric, RotationsMetric, 0);
     }
 
   } else {
@@ -2278,6 +2325,7 @@ void mainWindow_c::activateSolution(unsigned int prob, unsigned int num) {
 
     AssemblyNumber->hide();
     SolutionNumber->hide();
+    setMovesRotationsMetrics(MovesMetric, RotationsMetric, 0);
   }
 }
 
@@ -2295,6 +2343,27 @@ const char * timeToString(float time) {
   else                                         snprintf(tmp, 50, "ages");
 
   return tmp;
+}
+
+static bool computeTimeLeftEstimate(float finished, unsigned long ut, const solveThread_c * thread, float & remaining)
+{
+  /* Time left is extrapolated from assembly progress only. */
+  if (finished <= 0.0001f || finished >= 0.999f)
+    return false;
+
+  remaining = ut/finished - ut;
+
+  /* Avoid showing "0 seconds" while work is still in progress. */
+  if (remaining < 1.0f)
+    return false;
+
+  /* Disassembly (including Check Rotations) runs asynchronously and is not
+   * included in getFinished(); near the end of assembly the backlog makes the
+   * assembly-only estimate unreliable. */
+  if (thread && thread->disassemblyEnabled() && thread->getDisassemblyPending() > 0 && finished >= 0.9f)
+    return false;
+
+  return true;
 }
 
 int mainWindow_c::findMenuEntry(const char * txt) {
@@ -2615,6 +2684,7 @@ void mainWindow_c::updateInterface(void) {
 
         AssemblyNumber->hide();
         SolutionNumber->hide();
+        setMovesRotationsMetrics(MovesMetric, RotationsMetric, 0);
       }
 
       if (pr->numAssembliesKnown()) {
@@ -2631,19 +2701,20 @@ void mainWindow_c::updateInterface(void) {
         OutputSolutions->hide();
       }
 
-      // the placement browser can only be activated when an assembler is available and not assembling is active
+      // the placement and movement browsers are only available when an assembler
+      // is present and the solver is not running
       if (pr->getAssembler() && !assmThread) {
         BtnPlacement->activate();
+
+        if ((ggt->getGridType()->getCapabilities() & gridType_c::CAP_DISASSEMBLE) &&
+            numSol > 0 &&
+            (SolutionSel->value()-1) < numSol)
+          BtnMovement->activate();
+        else
+          BtnMovement->deactivate();
       } else {
         BtnPlacement->deactivate();
-      }
-
-      // the step button is only active when the placements browser can be active AND when the puzzle is not
-      // yet completely solved
-      if (pr->getAssembler() && !assmThread && (pr->getSolveState() != SS_SOLVED)) {
-        if (BtnStep) BtnStep->activate();
-      } else {
-        if (BtnStep) BtnStep->deactivate();
+        BtnMovement->deactivate();
       }
 
       if (numSol >= 2) {
@@ -2717,17 +2788,12 @@ void mainWindow_c::updateInterface(void) {
 
       updateSolverOptionCheckboxes();
 
-      if (ggt->getGridType()->getCapabilities() & gridType_c::CAP_DISASSEMBLE &&
-          !assmThread &&
-          solutionProblem->getSelection() < puzzle->getNumberOfProblems() &&
-          SolutionSel->value()-1 < numSol
-         )
-      {
-        BtnMovement->activate();
-      }
-      else
-      {
-        BtnMovement->deactivate();
+      // the step button is only active when the placements browser can be active AND when the puzzle is not
+      // yet completely solved
+      if (pr->getAssembler() && !assmThread && (pr->getSolveState() != SS_SOLVED)) {
+        if (BtnStep) BtnStep->activate();
+      } else {
+        if (BtnStep) BtnStep->deactivate();
       }
     } else {
 
@@ -2741,6 +2807,7 @@ void mainWindow_c::updateInterface(void) {
 
       AssemblyNumber->hide();
       SolutionNumber->hide();
+      setMovesRotationsMetrics(MovesMetric, RotationsMetric, 0);
 
       SolvingProgress->hide();
       OutputAssemblies->hide();
@@ -2782,10 +2849,13 @@ void mainWindow_c::updateInterface(void) {
         ut = assmThread->getTime();
 
       TimeUsed->value(timeToString(ut));
-      if (finished != 0)
-        TimeEst->value(timeToString(ut/finished-ut));
-      else
-        TimeEst->value("unknown");
+      {
+        float remaining;
+        if (computeTimeLeftEstimate(finished, ut, assmThread, remaining))
+          TimeEst->value(timeToString(remaining));
+        else
+          TimeEst->value("unknown");
+      }
 
       TimeUsed->show();
       TimeEst->show();
@@ -2870,6 +2940,8 @@ void mainWindow_c::updateInterface(void) {
         BtnDisasmAddAll->deactivate();
         BtnDisasmAddMissing->deactivate();
 
+        sortMethod->deactivate();
+
       } else {
 
         // all other problems can do nothing
@@ -2878,6 +2950,8 @@ void mainWindow_c::updateInterface(void) {
         BtnCont->deactivate();
         BtnStop->deactivate();
         if (BtnPrepare) BtnPrepare->deactivate();
+
+        sortMethod->deactivate();
 
       }
 
@@ -2928,6 +3002,8 @@ void mainWindow_c::updateInterface(void) {
           if (BtnPrepare) BtnPrepare->deactivate();
         }
 
+        sortMethod->activate();
+
       } else {
 
         // no start possible, when no valid problem selected
@@ -2935,6 +3011,8 @@ void mainWindow_c::updateInterface(void) {
         if (BtnPrepare) BtnPrepare->deactivate();
         BtnCont->deactivate();
         if (BtnPrepare) BtnPrepare->deactivate();
+
+        sortMethod->deactivate();
       }
     }
   }
@@ -3513,15 +3591,13 @@ void mainWindow_c::CreateSolveTab(void) {
     layouter_c * group = new layouter_c(0, 0);
     group->box(FL_FLAT_BOX);
 
-    new LSeparator_c(0, 0, 1, 1, "Parameters", false);
-
     solutionProblem = new ProblemSelector(0, 0, 100, 100, puzzle);
-    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 1, 1, 1, solutionProblem);
+    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 0, 1, 1, solutionProblem);
     shapeGroup->callback(cb_SolProbSel_stub, this);
     shapeGroup->tooltip(" Select problem to solve ");
     shapeGroup->weight(1, 1);
 
-    layouter_c * o = new layouter_c(0, 2);
+    layouter_c * o = new layouter_c(0, 1);
 
     SolveDisasm = new LFl_Check_Button("Disassemble", 0, 0, 1, 1);
     SolveDisasm->tooltip(" Do also try to disassemble the assembled puzzles. Only puzzles that can be disassembled will be added to solutions ");
@@ -3564,7 +3640,7 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o->end();
 
-    o = new layouter_c(0, 3);
+    o = new layouter_c(0, 2);
 
     new LFl_Box("Sort by: ", 0, 0, 1, 1);
 
@@ -3575,87 +3651,89 @@ void mainWindow_c::CreateSolveTab(void) {
     sortMethod->add("Unsorted");
     sortMethod->add("Moves for Complete Disassembly");
     sortMethod->add("Level");
+    sortMethod->add("Rotations");
 
     sortMethod->value(1);
+    sortMethod->callback(cb_SortMethod_stub, this);
 
     o->end();
 
-    (new LFl_Box(0, 4))->setMinimumSize(0, SZ_GAP);
+    (new LFl_Box(0, 3))->setMinimumSize(0, SZ_GAP);
 
-    o = new layouter_c(0, 5);
+    o = new layouter_c(0, 4);
 
-    new LFl_Box("Drop ", 0, 0, 1, 1);
-    new LFl_Box("Limit ", 3, 0, 1, 1);
-    (new LFl_Box(2, 0))->setMinimumSize(SZ_GAP, 0);
-
-    solDrop = new LFl_Value_Input(1, 0, 1, 1);
-    solLimit = new LFl_Value_Input(4, 0, 1, 1);
-    solDrop->bounds(1, 100000000);
+    new LFl_Box("Display Limit:", 0, 0, 1, 1);
+    solLimit = new LFl_Value_Input(1, 0, 1, 1);
     solLimit->bounds(1, 100000000);
     solLimit->step(1, 1);
-    solDrop->step(1, 1);
-
-    solDrop->value(1);
     solLimit->value(100);
+    ((LFl_Value_Input*)solLimit)->setMinimumSize(48, 0);
 
-    ((LFl_Value_Input*)solDrop)->weight(1, 0);
-    ((LFl_Value_Input*)solLimit)->weight(1, 0);
+    (new LFl_Box(2, 0))->setMinimumSize(SZ_GAP, 0);
+
+    new LFl_Box("Keep Each: ", 3, 0, 1, 1);
+    solDrop = new LFl_Value_Input(4, 0, 1, 1);
+    solDrop->bounds(1, 100000000);
+    solDrop->step(1, 1);
+    solDrop->value(1);
+    ((LFl_Value_Input*)solDrop)->setMinimumSize(48, 0);
 
     o->end();
 
-    (new LFl_Box(0, 6))->setMinimumSize(0, SZ_GAP);
+    (new LFl_Box(0, 5))->setMinimumSize(0, SZ_GAP);
 
-    o = new layouter_c(0, 7);
+    o = new layouter_c(0, 6);
 
-    if (expertMode) {
-      BtnPrepare = new LFlatButton_c(0, 0, 1, 1, "Prepare", " Do the preparation phase and then stop, this removes old results ", cb_BtnPrepare_stub, this);
-      ((LFlatButton_c*)BtnPrepare)->weight(1, 0);
-      (new LFl_Box(1, 0))->setMinimumSize(SZ_GAP, 0);
-    } else
-      BtnPrepare = 0;
-    BtnStart = new LFlatButton_c(2, 0, 1, 1, "Start", " Start new solving process, removing old result ", cb_BtnStart_stub, this);
+    new LFl_Box("Solve: ", 0, 0, 1, 1);
+    BtnStart = new LFlatButton_c(1, 0, 1, 1, "Solve", " Start new solving process, removing old result ", cb_BtnStart_stub, this);
     ((LFlatButton_c*)BtnStart)->weight(1, 0);
-    (new LFl_Box(3, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnCont = new LFlatButton_c(4, 0, 1, 1, "Continue", " Continue started process ", cb_BtnCont_stub, this);
-    ((LFlatButton_c*)BtnCont)->weight(1, 0);
-    (new LFl_Box(5, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnStop = new LFlatButton_c(6, 0, 1, 1, "Stop", " Stop a currently running solution process ", cb_BtnStop_stub, this);
+    BtnStop = new LFlatButton_c(2, 0, 1, 1, "Pause", " Pause a currently running solution process ", cb_BtnStop_stub, this);
     ((LFlatButton_c*)BtnStop)->weight(1, 0);
+    BtnCont = new LFlatButton_c(3, 0, 1, 1, "Continue", " Continue started process ", cb_BtnCont_stub, this);
+    ((LFlatButton_c*)BtnCont)->weight(1, 0);
 
     o->end();
 
-    (new LFl_Box(0, 8))->setMinimumSize(0, SZ_GAP);
+    (new LFl_Box(0, 7))->setMinimumSize(0, SZ_GAP);
 
-    o = new layouter_c(0, 9);
+    o = new layouter_c(0, 8);
 
-    BtnPlacement = new LFlatButton_c(0, 0, 1, 1, "Placements", " Browse the calculated placement of pieces ", cb_BtnPlacementBrowser_stub, this);
+    new LFl_Box("Analyze: ", 0, 0, 1, 1);
+    BtnPlacement = new LFlatButton_c(1, 0, 1, 1, "Placements", " Browse the calculated placement of pieces ", cb_BtnPlacementBrowser_stub, this);
     ((LFlatButton_c*)BtnPlacement)->weight(1, 0);
-
-    (new LFl_Box(1, 0))->setMinimumSize(SZ_GAP, 0);
-
     BtnMovement = new LFlatButton_c(2, 0, 1, 1, "Movements", " Browse the possible movements for an assembly ", cb_BtnMovementBrowser_stub, this);
     ((LFlatButton_c*)BtnMovement)->weight(1, 0);
 
-    if (expertMode)
-    {
-      (new LFl_Box(3, 0))->setMinimumSize(SZ_GAP, 0);
-
-      BtnStep = new LFlatButton_c(4, 0, 1, 1, "Step", " Make one step in the assembler ", cb_BtnAssemblerStep_stub, this);
-      ((LFlatButton_c*)BtnStep)->weight(1, 0);
-    } else
-      BtnStep = 0;
-
     o->end();
 
-    (new LFl_Box(0, 10))->setMinimumSize(0, SZ_GAP);
+    if (expertMode) {
 
-    SolvingProgress = new LFl_Progress(0, 11, 1, 1);
+      (new LFl_Box(0, 9))->setMinimumSize(0, SZ_GAP);
+
+      o = new layouter_c(0, 10);
+
+      new LFl_Box("Debug: ", 0, 0, 1, 1);
+      BtnPrepare = new LFlatButton_c(1, 0, 1, 1, "Prepare", " Do the preparation phase and then stop, this removes old results ", cb_BtnPrepare_stub, this);
+      ((LFlatButton_c*)BtnPrepare)->weight(1, 0);
+      BtnStep = new LFlatButton_c(2, 0, 1, 1, "Step", " Make one step in the assembler ", cb_BtnAssemblerStep_stub, this);
+      ((LFlatButton_c*)BtnStep)->weight(1, 0);
+
+      o->end();
+
+    } else {
+      BtnPrepare = 0;
+      BtnStep = 0;
+    }
+
+    (new LFl_Box(0, 11))->setMinimumSize(0, SZ_GAP);
+
+    SolvingProgress = new LFl_Progress(0, 12, 1, 1);
     SolvingProgress->tooltip(" Percentage of solution space searched ");
     SolvingProgress->box(FL_ENGRAVED_BOX);
     SolvingProgress->selection_color((Fl_Color)4);
     SolvingProgress->align(FL_ALIGN_CENTER | FL_ALIGN_INSIDE);
 
-    o = new layouter_c(0, 12);
+    o = new layouter_c(0, 13);
 
     (new LFl_Box("Activity: ", 0, 0, 1, 1))->stretchRight();
     OutputActivity = new LFl_Output(1, 0, 3, 1);
@@ -3696,7 +3774,7 @@ void mainWindow_c::CreateSolveTab(void) {
     layouter_c * group = new layouter_c(0, 1);
     group->box(FL_FLAT_BOX);
 
-    new LSeparator_c(0, 0, 1, 1, "Solutions", true);
+    (new LFl_Box(0, 0))->setMinimumSize(0, SZ_GAP);
 
     layouter_c * o = new layouter_c(0, 1);
 
@@ -3753,11 +3831,29 @@ void mainWindow_c::CreateSolveTab(void) {
     ((LFl_Value_Output*)AssemblyNumber)->weight(1, 0);
     ((LFl_Value_Output*)SolutionNumber)->weight(1, 0);
 
+    new LFl_Box("Moves:", 0, 1, 1, 1);
+    new LFl_Box("Rotations:", 2, 1, 1, 1);
+
+    MovesMetric = new LFl_Output(1, 1, 1, 1);
+    RotationsMetric = new LFl_Output(3, 1, 1, 1);
+    MovesMetric->box(FL_FLAT_BOX);
+    RotationsMetric->box(FL_FLAT_BOX);
+    MovesMetric->color(FL_BACKGROUND_COLOR);
+    RotationsMetric->color(FL_BACKGROUND_COLOR);
+    ((LFl_Output*)MovesMetric)->weight(1, 0);
+    ((LFl_Output*)RotationsMetric)->weight(1, 0);
+
     o->end();
 
     (new LFl_Box(0, 4))->setMinimumSize(0, SZ_GAP);
 
-    o = new layouter_c(0, 5);
+    (new LFl_Box(0, 5))->setMinimumSize(0, 22);
+
+    new LSeparator_c(0, 6, 1, 1, "Advanced Filters", false);
+
+    (new LFl_Box(0, 7))->setMinimumSize(0, SZ_GAP);
+
+    o = new layouter_c(0, 8);
 
     new LFl_Box("Sort by: ", 0, 0);
 
@@ -3767,7 +3863,7 @@ void mainWindow_c::CreateSolveTab(void) {
     BtnSrtLevel = new LFlatButton_c(3, 0, 1, 1, "Level", " Sort in the order of increasing level ", cb_SrtLevel_stub, this);
     ((LFlatButton_c*)BtnSrtLevel)->weight(1, 0);
     (new LFl_Box(4, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnSrtMoves = new LFlatButton_c(5, 0, 1, 1, "Disasm", " Sort in the order of increasing moves for complete disassembly ", cb_SrtMoves_stub, this);
+    BtnSrtMoves = new LFlatButton_c(5, 0, 1, 1, "Disarm", " Sort in the order of increasing moves for complete disassembly ", cb_SrtMoves_stub, this);
     ((LFlatButton_c*)BtnSrtMoves)->weight(1, 0);
     (new LFl_Box(6, 0))->setMinimumSize(SZ_GAP, 0);
     BtnSrtPieces = new LFlatButton_c(7, 0, 1, 1, "Pieces", " Sort in the order of used pieces ", cb_SrtPieces_stub, this);
@@ -3775,9 +3871,9 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o->end();
 
-    (new LFl_Box(0, 6))->setMinimumSize(0, SZ_GAP);
+    (new LFl_Box(0, 9))->setMinimumSize(0, SZ_GAP);
 
-    o = new layouter_c(0, 7);
+    o = new layouter_c(0, 10);
 
     new LFl_Box("Delete: ", 0, 0);
 
@@ -3798,9 +3894,9 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o->end();
 
-    (new LFl_Box(0, 8))->setMinimumSize(0, SZ_GAP);
+    (new LFl_Box(0, 11))->setMinimumSize(0, SZ_GAP);
 
-    o = new layouter_c(0, 9);
+    o = new layouter_c(0, 12);
 
     BtnDisasmDel    = new LFlatButton_c(0, 0, 1, 1, "D DA", " Remove the disassembly for the current solution ", cb_DelDisasm_stub, this);
     ((LFlatButton_c*)BtnDisasmDel)->weight(1, 0);
@@ -3819,10 +3915,10 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o->end();
 
-    (new LFl_Box(0, 10))->setMinimumSize(0, SZ_GAP);
+    (new LFl_Box(0, 13))->setMinimumSize(0, SZ_GAP);
 
     PcVis = new PieceVisibility(0, 0, 100, 100);
-    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 11, 1, 1, PcVis);
+    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 14, 1, 1, PcVis);
     shapeGroup->callback(cb_PcVis_stub, this);
     shapeGroup->tooltip(" Change appearance of the pieces between normal, grid and invisible ");
     shapeGroup->weight(1, 1);

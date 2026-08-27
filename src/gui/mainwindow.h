@@ -132,6 +132,7 @@ class mainWindow_c : public LFl_Double_Window {
   Fl_Value_Input *solDrop, *solLimit;
 
   Fl_Value_Output *SolutionNumber, *AssemblyNumber;
+  Fl_Output *MovesMetric, *RotationsMetric;
 
   FlatButton *BtnSrtFind, *BtnSrtLevel, *BtnSrtMoves, *BtnSrtPieces;
   FlatButton *BtnDelAll, *BtnDelBefore, *BtnDelAt, *BtnDelAfter, *BtnDelDisasm;
@@ -292,6 +293,7 @@ public:
   void cb_StatusWindow(void);
 
   void cb_SortSolutions(unsigned int by);
+  void cb_SortMethod(void);
   void cb_DeleteSolutions(unsigned int which);
 
   void cb_DeleteDisasm(void);

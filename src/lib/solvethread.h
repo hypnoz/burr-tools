@@ -102,6 +102,9 @@ class solveThread_c : public assembler_cb, public thread_c {
     /* how much time has passed since calling start */
     unsigned long getTime(void) { return time(0) - startTime; }
 
+    bool disassemblyEnabled(void) const { return (parameters & PAR_DISASSM) != 0; }
+    unsigned int getDisassemblyPending(void) const { return disasmPending.load(std::memory_order_relaxed); }
+
   private:
 
     problem_c & puzzle;
@@ -131,7 +134,8 @@ class solveThread_c : public assembler_cb, public thread_c {
     enum {
       SRT_UNSORT,
       SRT_COMPLETE_MOVES,
-      SRT_LEVEL
+      SRT_LEVEL,
+      SRT_ROTATIONS
     };
 
     void setSortMethod(int sort) { sortMethod = sort; }
@@ -185,11 +189,13 @@ class solveThread_c : public assembler_cb, public thread_c {
 
     void startDisasmWorker(void);
     void stopDisasmWorker(void);
+    void cancelDisassemblyWork(void);
     void disasmWorkerRun(void);
     void enqueueDisassembly(assembly_c * a);
     void flushDisassemblyQueue(void);
     void processDisassembly(const disasmTask_c & task, int solutionAction);
     unsigned int findInsertIndexByMoves(unsigned int lev) const;
+    unsigned int findInsertIndexByRotations(unsigned int lev) const;
     void trimSavedSolutions(int solutionAction);
 
 public:

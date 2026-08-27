@@ -76,12 +76,25 @@ void solveThread_c::run(void){
         return;
       }
 
+      if (stopPressed.load(std::memory_order_relaxed)) {
+        delete assm;
+        assm = 0;
+        action.store(ACT_PAUSING, std::memory_order_relaxed);
+        return;
+      }
+
       if (parameters & PAR_REDUCE) {
 
         if (!stopPressed.load(std::memory_order_relaxed))
           action.store(ACT_REDUCE, std::memory_order_relaxed);
 
-        assm->reduce();
+        if (!stopPressed.load(std::memory_order_relaxed))
+          assm->reduce();
+      }
+
+      if (stopPressed.load(std::memory_order_relaxed)) {
+        action.store(ACT_PAUSING, std::memory_order_relaxed);
+        return;
       }
 
       /* set the assembler to the problem as soon as it is finished
@@ -110,17 +123,21 @@ void solveThread_c::run(void){
 
       action.store(ACT_ASSEMBLING, std::memory_order_relaxed);
       assm->assemble(this);
-      flushDisassemblyQueue();
+
+      if (!stopPressed.load(std::memory_order_relaxed))
+        flushDisassemblyQueue();
+
       puzzle.addTime(time(0)-startTime);
 
-      if (assm->getFinished() >= 1) {
+      if (stopPressed.load(std::memory_order_relaxed))
+        action.store(ACT_PAUSING, std::memory_order_relaxed);
+      else if (assm->getFinished() >= 1) {
         action.store(ACT_FINISHED, std::memory_order_relaxed);
         puzzle.finishedSolving();
       } else
         action.store(ACT_PAUSING, std::memory_order_relaxed);
 
     } else {
-      flushDisassemblyQueue();
       action.store(ACT_PAUSING, std::memory_order_relaxed);
       puzzle.addTime(time(0)-startTime);
     }
@@ -187,11 +204,19 @@ void solveThread_c::startDisasmWorker(void) {
 }
 
 void solveThread_c::stopDisasmWorker(void) {
+  cancelDisassemblyWork();
+}
+
+void solveThread_c::cancelDisassemblyWork(void) {
 
   if (!(parameters & PAR_DISASSM))
     return;
 
   disasmWorkerStop.store(true, std::memory_order_release);
+
+  if (disassm)
+    disassm->stop();
+
   disasmQueueCv.notify_all();
 
 #ifndef NO_THREADING
@@ -230,6 +255,13 @@ void solveThread_c::disasmWorkerRun(void) {
       disasmQueue.pop();
     }
 
+    if (disasmWorkerStop.load(std::memory_order_acquire)) {
+      delete task.assembly;
+      if (disasmPending.fetch_sub(1, std::memory_order_acq_rel) == 1)
+        disasmQueueCv.notify_all();
+      continue;
+    }
+
     processDisassembly(task, solutionAction);
 
     if (disasmPending.fetch_sub(1, std::memory_order_acq_rel) == 1)
@@ -262,7 +294,10 @@ void solveThread_c::flushDisassemblyQueue(void) {
 #else
   std::unique_lock<std::mutex> lock(disasmQueueMutex);
   disasmQueueCv.wait(lock, [this]() {
-    return disasmQueue.empty() && disasmPending.load(std::memory_order_acquire) == 0;
+    return stopPressed.load(std::memory_order_acquire) ||
+           disasmWorkerStop.load(std::memory_order_acquire) ||
+           (disasmQueue.empty() &&
+            disasmPending.load(std::memory_order_acquire) == 0);
   });
 #endif
 }
@@ -274,9 +309,27 @@ unsigned int solveThread_c::findInsertIndexByMoves(unsigned int lev) const {
 
   while (lo < hi) {
     unsigned int mid = lo + (hi - lo) / 2;
-    const disassembly_c * s2 = puzzle.getSavedSolution(mid)->getDisassembly();
+    const disassembly_c * s2 = puzzle.getSavedSolution(mid)->getDisassemblyInfo();
 
-    if (s2 && s2->sumMoves() > lev)
+    if (s2 && s2->sumMoves() < lev)
+      hi = mid;
+    else
+      lo = mid + 1;
+  }
+
+  return lo;
+}
+
+unsigned int solveThread_c::findInsertIndexByRotations(unsigned int lev) const {
+
+  unsigned int lo = 0;
+  unsigned int hi = puzzle.getNumberOfSavedSolutions();
+
+  while (lo < hi) {
+    unsigned int mid = lo + (hi - lo) / 2;
+    const disassembly_c * s2 = puzzle.getSavedSolution(mid)->getDisassemblyInfo();
+
+    if (s2 && s2->sumRotations() < lev)
       hi = mid;
     else
       lo = mid + 1;
@@ -338,7 +391,33 @@ void solveThread_c::processDisassembly(const disasmTask_c & task, int _solutionA
           }
 
           if (solutionLimit && (puzzle.getNumberOfSavedSolutions() > solutionLimit))
-            puzzle.removeSolution(0);
+            puzzle.removeSolution(puzzle.getNumberOfSavedSolutions()-1);
+        }
+        break;
+      case SRT_ROTATIONS:
+        {
+          unsigned int lev = s->sumRotations();
+          unsigned int insertPos = findInsertIndexByRotations(lev);
+
+          if (insertPos < puzzle.getNumberOfSavedSolutions()) {
+            if (parameters & PAR_DROP_DISASSEMBLIES) {
+              puzzle.addSolution(a, new separationInfo_c(s), task.assemblyNumber, task.solutionNumber, insertPos);
+              delete s;
+            } else
+              puzzle.addSolution(a, s, task.assemblyNumber, task.solutionNumber, insertPos);
+            ins = true;
+          }
+
+          if (!ins) {
+            if (parameters & PAR_DROP_DISASSEMBLIES) {
+              puzzle.addSolution(a, new separationInfo_c(s), task.assemblyNumber, task.solutionNumber);
+              delete s;
+            } else
+              puzzle.addSolution(a, s, task.assemblyNumber, task.solutionNumber);
+          }
+
+          if (solutionLimit && (puzzle.getNumberOfSavedSolutions() > solutionLimit))
+            puzzle.removeSolution(puzzle.getNumberOfSavedSolutions()-1);
         }
         break;
       case SRT_LEVEL:
@@ -347,7 +426,7 @@ void solveThread_c::processDisassembly(const disasmTask_c & task, int _solutionA
 
             const disassembly_c * s2 = puzzle.getSavedSolution(i)->getDisassemblyInfo();
 
-            if (s2 && (s2->compare(s) > 0)) {
+            if (s2 && (s2->compare(s) < 0)) {
               if (parameters & PAR_DROP_DISASSEMBLIES) {
                 puzzle.addSolution(a, new separationInfo_c(s), task.assemblyNumber, task.solutionNumber, i);
                 delete s;
@@ -367,7 +446,7 @@ void solveThread_c::processDisassembly(const disasmTask_c & task, int _solutionA
           }
 
           if (solutionLimit && (puzzle.getNumberOfSavedSolutions() > solutionLimit))
-            puzzle.removeSolution(0);
+            puzzle.removeSolution(puzzle.getNumberOfSavedSolutions()-1);
         }
         break;
       case SRT_UNSORT:
@@ -409,6 +488,11 @@ void solveThread_c::trimSavedSolutions(int _solutionAction) {
 }
 
 bool solveThread_c::assembly(assembly_c * a) {
+
+  if (stopPressed.load(std::memory_order_acquire)) {
+    delete a;
+    return true;
+  }
 
   const int _solutionAction = solutionActionFromParameters(parameters);
 
@@ -464,12 +548,13 @@ void solveThread_c::stop(void) {
      )
     return;
 
+  stopPressed.store(true, std::memory_order_release);
   action.store(ACT_WAIT_TO_STOP, std::memory_order_relaxed);
 
   if (puzzle.getAssembler())
     puzzle.getAssembler()->stop();
 
-  stopPressed.store(true, std::memory_order_release);
+  cancelDisassemblyWork();
 }
 
 bool solveThread_c::start(bool stop_after_prep) {

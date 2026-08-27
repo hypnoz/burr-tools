@@ -502,6 +502,9 @@ public:
 
   /** sort solutions by 0=assembly, 1=level, 2=sumMoves, 3=pieces */
   void sortSolutions(int by);
+
+  /** sort solutions using solver "Sort by" indices (0=unsorted, 1=moves, 2=level, 3=rotations), highest first */
+  void sortSolutionsBySolverMethod(int method);
   //@}
 
 private:

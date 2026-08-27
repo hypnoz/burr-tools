@@ -57,6 +57,12 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
   // first we figure out how many rows/columns
   for (int i = 0; i < children(); i++) {
 
+    if (!_widgets[i]->visible()) {
+      (*widgetsW)[i] = 0;
+      (*widgetsH)[i] = 0;
+      continue;
+    }
+
     unsigned int gX, gY, gW, gH;
 
     layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
@@ -100,6 +106,9 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
    * stretching of the column
    */
   for (int i = 0; i < children(); i++) {
+    if (!_widgets[i]->visible())
+      continue;
+
     unsigned int gX, gY, gW, gH;
 
     layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
@@ -120,6 +129,9 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
   }
 
   for (int i = 0; i < children(); i++) {
+    if (!_widgets[i]->visible())
+      continue;
+
     unsigned int gX, gY, gW, gH;
 
     layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
@@ -153,6 +165,9 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
 
   /* calculate rows, see columns */
   for (int i = 0; i < children(); i++) {
+    if (!_widgets[i]->visible())
+      continue;
+
     unsigned int gX, gY, gW, gH;
 
     layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
@@ -173,6 +188,9 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
   }
 
   for (int i = 0; i < children(); i++) {
+    if (!_widgets[i]->visible())
+      continue;
+
     unsigned int gX, gY, gW, gH;
 
     layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
@@ -280,6 +298,9 @@ void layouter_c::resize(int xt, int yt, int w, int h) {
 
   /* and now layout widgets according to the plan */
   for (int i = 0; i < children(); i++) {
+
+    if (!_widgets[i]->visible())
+      continue;
 
     int xp, yp, w, h;
     xp = yp = h = w = 0;

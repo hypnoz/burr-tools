@@ -1084,6 +1084,52 @@ static bool comp_3_pieces(const solution_c * s1, const solution_c * s2)
   return s1->getAssembly()->comparePieces(s2->getAssembly()) > 0;
 }
 
+static bool comp_srt_unsort(const solution_c * s1, const solution_c * s2)
+{
+  if (s1->getSolutionNumber() != s2->getSolutionNumber())
+    return s1->getSolutionNumber() > s2->getSolutionNumber();
+  return s1->getAssemblyNumber() > s2->getAssemblyNumber();
+}
+
+static bool comp_srt_moves_desc(const solution_c * s1, const solution_c * s2)
+{
+  const disassembly_c * d1 = s1->getDisassemblyInfo();
+  const disassembly_c * d2 = s2->getDisassemblyInfo();
+
+  if (!d1 && !d2) return comp_srt_unsort(s1, s2);
+  if (!d1) return false;
+  if (!d2) return true;
+  if (d1->sumMoves() != d2->sumMoves())
+    return d1->sumMoves() > d2->sumMoves();
+  return comp_srt_unsort(s1, s2);
+}
+
+static bool comp_srt_level_desc(const solution_c * s1, const solution_c * s2)
+{
+  const disassembly_c * d1 = s1->getDisassemblyInfo();
+  const disassembly_c * d2 = s2->getDisassemblyInfo();
+
+  if (!d1 && !d2) return comp_srt_unsort(s1, s2);
+  if (!d1) return false;
+  if (!d2) return true;
+  if (d1->compare(d2) != 0)
+    return d1->compare(d2) > 0;
+  return comp_srt_unsort(s1, s2);
+}
+
+static bool comp_srt_rotations_desc(const solution_c * s1, const solution_c * s2)
+{
+  const disassembly_c * d1 = s1->getDisassemblyInfo();
+  const disassembly_c * d2 = s2->getDisassemblyInfo();
+
+  if (!d1 && !d2) return comp_srt_unsort(s1, s2);
+  if (!d1) return false;
+  if (!d2) return true;
+  if (d1->sumRotations() != d2->sumRotations())
+    return d1->sumRotations() > d2->sumRotations();
+  return comp_srt_unsort(s1, s2);
+}
+
 
 void problem_c::sortSolutions(int by) {
   std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
@@ -1092,6 +1138,16 @@ void problem_c::sortSolutions(int by) {
     case 1: stable_sort(solutions.begin(), solutions.end(), comp_1_level   ); break;
     case 2: stable_sort(solutions.begin(), solutions.end(), comp_2_moves   ); break;
     case 3: stable_sort(solutions.begin(), solutions.end(), comp_3_pieces  ); break;
+  }
+}
+
+void problem_c::sortSolutionsBySolverMethod(int method) {
+  std::lock_guard<std::recursive_mutex> lock(solutionsMutex);
+  switch (method) {
+    case 0: stable_sort(solutions.begin(), solutions.end(), comp_srt_unsort); break;
+    case 1: stable_sort(solutions.begin(), solutions.end(), comp_srt_moves_desc); break;
+    case 2: stable_sort(solutions.begin(), solutions.end(), comp_srt_level_desc); break;
+    case 3: stable_sort(solutions.begin(), solutions.end(), comp_srt_rotations_desc); break;
   }
 }
 

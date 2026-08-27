@@ -899,6 +899,9 @@ void assembler_1_c::reduce(void) {
 
   for (unsigned int col = right[0]; col; col = right[col]) {
 
+    if (abort.load(std::memory_order_acquire))
+      break;
+
     // this is taken from the assembler 0 reduce
     // as I don't know how to generalise the approach
     // we do it only on columns with min = max = 1
@@ -956,7 +959,13 @@ void assembler_1_c::reduce(void) {
 
   do {
 
+    if (abort.load(std::memory_order_acquire))
+      break;
+
     for (unsigned int pp = 0; pp < piecePositions.size(); pp++) {
+
+      if (abort.load(std::memory_order_acquire))
+        break;
 
       unsigned int row = piecePositions[pp].row;
       reducePiece = piecePositions[pp].piece;
@@ -1073,19 +1082,11 @@ void assembler_1_c::solution(void) {
 
     assembly_c * assembly = getAssembly();
 
-    if (avoidTransformedAssemblies) {
-      bool drop = false;
-      for (unsigned int pivot = 0; pivot < problem.getNumberOfPieces(); pivot++)
-        if (assembly->smallerRotationExists(problem, pivot, 0, true)) {
-          drop = true;
-          break;
-        }
-      if (drop)
-        delete assembly;
-      else
-        getCallback()->assembly(assembly);
-    } else
+    if (avoidTransformedAssemblies && assembly->smallerRotationExists(problem, avoidTransformedPivot, avoidTransformedMirror, complete))
+      delete assembly;
+    else {
       getCallback()->assembly(assembly);
+    }
 
 #if 0
     // as the below debug code has been way too useful an way too many
@@ -1501,12 +1502,8 @@ void assembler_1_c::iterative(void) {
     // wan can only restore the states 1, 2 and 5. Internal states will alway
     // be one of those, but the last state might differ, so continue looping
     // until the final state is 1, 2 or 5
-    if (abort.load(std::memory_order_acquire)) {
-      if (task_stack.back() == 1 ||
-          task_stack.back() == 2 ||
-          task_stack.back() == 5)
-        break;
-    }
+    if (abort.load(std::memory_order_acquire))
+      break;
 
     // the debugger
     if (debug) {

@@ -30,7 +30,7 @@
 #include "rotationmoves_0.h"
 
 disassembler_a_c::disassembler_a_c(const problem_c & puz, bool enableRotations) :
-  disassembler_c(), puzzle(puz) {
+  disassembler_c(), puzzle(puz), abort(false) {
 
   /* Initialise the grouping class */
   groups = new grouping_c();

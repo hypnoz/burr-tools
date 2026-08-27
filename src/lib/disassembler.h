@@ -53,7 +53,10 @@ public:
    */
   virtual separation_c * disassemble(const assembly_c * /*assembly*/) { return 0; }
 
-private:
+  /** request abort of an in-progress disassemble call */
+  virtual void stop(void) {}
+
+  private:
 
   // no copying and assigning
   disassembler_c(const disassembler_c&);
