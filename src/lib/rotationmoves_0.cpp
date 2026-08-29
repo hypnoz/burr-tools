@@ -29,7 +29,7 @@
 #include "symmetries.h"
 #include "voxel.h"
 
-#include <set>
+#include <vector>
 
 /* Cube orientation indices for ±90° about X/Y/Z (see tabs_0/rotmatrix.inc) */
 static const unsigned char ROT_X_P90 = 1;
@@ -40,16 +40,6 @@ static const unsigned char ROT_Z_P90 = 16;
 static const unsigned char ROT_Z_M90 = 20;
 
 namespace {
-
-struct cellLess {
-  bool operator()(const rotationRules_c::cell_t & a, const rotationRules_c::cell_t & b) const {
-    if (a.x != b.x) return a.x < b.x;
-    if (a.y != b.y) return a.y < b.y;
-    return a.z < b.z;
-  }
-};
-
-typedef std::set<rotationRules_c::cell_t, cellLess> cellSet;
 
 static void rotateVectorLocal(int * x, int * y, int * z, unsigned int axis, unsigned int sense) {
 
@@ -67,18 +57,39 @@ static void rotateVectorLocal(int * x, int * y, int * z, unsigned int axis, unsi
   }
 }
 
-static void rotateCell(const rotationRules_c::cell_t & cell,
-                       const rotationRules_c::cell_t & pivot,
+static bool rotateDoubledPoint(int * x, int * y, int * z,
+                               const rotationRules_c::pivot_t & pivot,
+                               unsigned int axis, unsigned int sense) {
+
+  int dx = (*x) * 2 - pivot.hx;
+  int dy = (*y) * 2 - pivot.hy;
+  int dz = (*z) * 2 - pivot.hz;
+
+  rotateVectorLocal(&dx, &dy, &dz, axis, sense);
+
+  int nx = pivot.hx + dx;
+  int ny = pivot.hy + dy;
+  int nz = pivot.hz + dz;
+  if ((nx | ny | nz) & 1)
+    return false;
+
+  *x = nx / 2;
+  *y = ny / 2;
+  *z = nz / 2;
+  return true;
+}
+
+static bool rotateCell(const rotationRules_c::cell_t & cell,
+                       const rotationRules_c::pivot_t & pivot,
                        unsigned int axis,
                        unsigned int sense,
                        rotationRules_c::cell_t & out) {
 
-  int dx = cell.x - pivot.x;
-  int dy = cell.y - pivot.y;
-  int dz = cell.z - pivot.z;
-
-  rotateVectorLocal(&dx, &dy, &dz, axis, sense);
-  out = rotationRules_c::cell_t(pivot.x + dx, pivot.y + dy, pivot.z + dz);
+  int x = cell.x, y = cell.y, z = cell.z;
+  if (!rotateDoubledPoint(&x, &y, &z, pivot, axis, sense))
+    return false;
+  out = rotationRules_c::cell_t(x, y, z);
+  return true;
 }
 
 } // namespace
@@ -111,6 +122,12 @@ void rotationMoves_0_c::rotateVector(int * x, int * y, int * z, unsigned int axi
     if (sense == 0) { *x = -oy; *y = ox; *z = oz; }   /* +90 Z */
     else            { *x = oy;  *y = -ox; *z = oz; }  /* -90 Z */
   }
+}
+
+bool rotationMoves_0_c::rotateDoubled(int * x, int * y, int * z,
+                                      const rotationRules_c::pivot_t & pivot,
+                                      unsigned int axis, unsigned int sense) {
+  return rotateDoubledPoint(x, y, z, pivot, axis, sense);
 }
 
 unsigned char rotationMoves_0_c::rotationTransformId(unsigned int axis, unsigned int sense) {
@@ -160,11 +177,12 @@ void rotationMoves_0_c::collectWorldCells(unsigned int pieceIdx, std::vector<rot
           out.push_back(rotationRules_c::cell_t(px - hx + (int)x, py - hy + (int)y, pz - hz + (int)z));
 }
 
-void rotationMoves_0_c::rebuildPivotCells(unsigned int subsetMask) {
-
-  cellSet pivots;
+void rotationMoves_0_c::rebuildPivotCells(unsigned int subsetMask, unsigned int axis) {
 
   pivotCells.clear();
+
+  std::vector<rotationRules_c::cell_t> moving;
+  moving.reserve(64);
 
   for (unsigned int i = 0; i < pieces->size(); i++) {
     if (!(subsetMask & (1u << i))) continue;
@@ -173,8 +191,55 @@ void rotationMoves_0_c::rebuildPivotCells(unsigned int subsetMask) {
     std::vector<rotationRules_c::cell_t> cells;
     collectWorldCells(i, cells);
     for (unsigned int c = 0; c < cells.size(); c++)
-      if (pivots.insert(cells[c]).second)
-        pivotCells.push_back(cells[c]);
+      moving.push_back(cells[c]);
+  }
+
+  if (moving.empty())
+    return;
+
+  int umin, umax, vmin, vmax, amin;
+  if (axis == 0) {
+    umin = umax = moving[0].y;
+    vmin = vmax = moving[0].z;
+    amin = moving[0].x;
+  } else if (axis == 1) {
+    umin = umax = moving[0].x;
+    vmin = vmax = moving[0].z;
+    amin = moving[0].y;
+  } else {
+    umin = umax = moving[0].x;
+    vmin = vmax = moving[0].y;
+    amin = moving[0].z;
+  }
+
+  for (unsigned int c = 1; c < moving.size(); c++) {
+    const rotationRules_c::cell_t & p = moving[c];
+    int u = (axis == 0) ? p.y : p.x;
+    int v = (axis == 2) ? p.y : p.z;
+    int a = (axis == 0) ? p.x : ((axis == 1) ? p.y : p.z);
+    if (u < umin) umin = u;
+    if (u > umax) umax = u;
+    if (v < vmin) vmin = v;
+    if (v > vmax) vmax = v;
+    if (a < amin) amin = a;
+  }
+
+  /* In-plane half-grid covering voxel centres, empty bbox cells, faces, edges,
+   * and corners. Axis coordinate is the mid-layer of the moving piece. */
+  const int du0 = 2 * umin - 1;
+  const int du1 = 2 * umax + 1;
+  const int dv0 = 2 * vmin - 1;
+  const int dv1 = 2 * vmax + 1;
+  const int da = 2 * amin;
+
+  for (int du = du0; du <= du1; du++) {
+    for (int dv = dv0; dv <= dv1; dv++) {
+      rotationRules_c::pivot_t p;
+      if (axis == 0) { p.hx = da; p.hy = du; p.hz = dv; }
+      else if (axis == 1) { p.hx = du; p.hy = da; p.hz = dv; }
+      else { p.hx = du; p.hy = dv; p.hz = da; }
+      pivotCells.push_back(p);
+    }
   }
 }
 
@@ -184,7 +249,7 @@ disassemblerNode_c * rotationMoves_0_c::tryCurrentCandidate(void) {
     return 0;
 
   const unsigned int subsetMask = nextsubset;
-  rotationRules_c::cell_t pivot = pivotCells[nextpivot];
+  rotationRules_c::pivot_t pivot = pivotCells[nextpivot];
 
   std::vector<rotationRules_c::cell_t> combinedStart;
   combinedStart.reserve(64);
@@ -202,12 +267,17 @@ disassemblerNode_c * rotationMoves_0_c::tryCurrentCandidate(void) {
   if (combinedStart.empty())
     return 0;
 
+  /* A lone unit cube cannot free itself by spinning in place. */
+  if (combinedStart.size() == 1)
+    return 0;
+
   std::vector<rotationRules_c::cell_t> combinedEnd;
   combinedEnd.reserve(combinedStart.size());
 
   for (unsigned int i = 0; i < combinedStart.size(); i++) {
     rotationRules_c::cell_t endCell;
-    rotateCell(combinedStart[i], pivot, nextaxis, nextsense, endCell);
+    if (!rotateCell(combinedStart[i], pivot, nextaxis, nextsense, endCell))
+      return 0;
     combinedEnd.push_back(endCell);
   }
 
@@ -235,7 +305,7 @@ disassemblerNode_c * rotationMoves_0_c::tryCurrentCandidate(void) {
 
   unsigned int dir = ROTATION_DIR_BASE + nextaxis * 2 + nextsense;
   disassemblerNode_c * n = new disassemblerNode_c(pieces->size(), searchnode, (int)dir, 1);
-  n->setRotationInfo(primaryPiece, pivot.x, pivot.y, pivot.z);
+  n->setRotationInfo(primaryPiece, pivot.hx, pivot.hy, pivot.hz);
 
   for (unsigned int i = 0; i < pieces->size(); i++) {
     if (searchnode->is_piece_removed(i)) {
@@ -254,18 +324,17 @@ disassemblerNode_c * rotationMoves_0_c::tryCurrentCandidate(void) {
       int px = searchnode->getX(i);
       int py = searchnode->getY(i);
       int pz = searchnode->getZ(i);
-      int hx = px - pivot.x;
-      int hy = py - pivot.y;
-      int hz = pz - pivot.z;
-      rotateVector(&hx, &hy, &hz, nextaxis, nextsense);
-      int newPx = pivot.x + hx;
-      int newPy = pivot.y + hy;
-      int newPz = pivot.z + hz;
+      if (!rotateDoubled(&px, &py, &pz, pivot, nextaxis, nextsense)) {
+        if (n->decRefCount())
+          delete n;
+        return 0;
+      }
 
-      if (newPx != px || newPy != py || newPz != pz || newTrans != oldTrans)
+      if (px != searchnode->getX(i) || py != searchnode->getY(i) ||
+          pz != searchnode->getZ(i) || newTrans != oldTrans)
         changed = true;
 
-      n->set(i, newPx, newPy, newPz, newTrans);
+      n->set(i, px, py, pz, newTrans);
     } else {
       n->set(i,
              searchnode->getX(i),
@@ -295,7 +364,7 @@ void rotationMoves_0_c::init_find(disassemblerNode_c * nd, const std::vector<uns
   active = pcs.size() > 0;
 
   if (active)
-    rebuildPivotCells(nextsubset);
+    rebuildPivotCells(nextsubset, nextaxis);
 }
 
 disassemblerNode_c * rotationMoves_0_c::find(void) {
@@ -312,20 +381,20 @@ disassemblerNode_c * rotationMoves_0_c::find(void) {
     nextsense++;
     if (nextsense >= 2) {
       nextsense = 0;
-      nextaxis++;
-      if (nextaxis >= 3) {
-        nextaxis = 0;
-        nextpivot++;
-        if ((unsigned int)nextpivot >= pivotCells.size()) {
-          nextpivot = 0;
+      nextpivot++;
+      if ((unsigned int)nextpivot >= pivotCells.size()) {
+        nextpivot = 0;
+        nextaxis++;
+        if (nextaxis >= 3) {
+          nextaxis = 0;
           nextsubset = nextSubsetMask(nextsubset, n);
           if (nextsubset == 0) {
             active = false;
             if (node) return node;
             return 0;
           }
-          rebuildPivotCells(nextsubset);
         }
+        rebuildPivotCells(nextsubset, nextaxis);
       }
     }
 

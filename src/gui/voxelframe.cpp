@@ -20,6 +20,7 @@
  */
 #include "voxelframe.h"
 #include "arcball.h"
+#include "viewcube.h"
 
 #include "piececolor.h"
 #include "configuration.h"
@@ -41,6 +42,7 @@
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #define GL_SILENCE_DEPRECATION 1
 #include <FL/Fl.H>
+#include <FL/Fl_Window.H>
 #pragma GCC diagnostic pop
 
 #ifdef _WIN32
@@ -55,6 +57,10 @@ voxelFrame_c::voxelFrame_c(int x,int y,int w,int h) :
   curProblem(0),
   markerType(-1),
   size(10), cb(0),
+  viewCube(new viewCube_c()),
+  homeCb(0),
+  homeUser(0),
+  drawViewCube(true),
   colors(pieceColor),
   _useLightning(true),
   debugRotations(false),
@@ -90,6 +96,7 @@ voxelFrame_c::~voxelFrame_c(void) {
     curAssembly = 0;
   }
   delete rotater;
+  delete viewCube;
 }
 
 // this is used to shift one side of the cubes so that they slightly differ
@@ -414,9 +421,45 @@ bool inRegion(int x, int y, int z, int x1, int x2, int y1, int y2, int z1, int z
   return false;
 }
 
+static bool projectToWindow(float x, float y, float z, int winW, int winH, int *sx, int *sy) {
 
+  GLdouble m[16], p[16];
+  GLint v[4];
+  glGetDoublev(GL_MODELVIEW_MATRIX, m);
+  glGetDoublev(GL_PROJECTION_MATRIX, p);
+  glGetIntegerv(GL_VIEWPORT, v);
 
+  GLdouble ex = m[0]*x + m[4]*y + m[8]*z  + m[12];
+  GLdouble ey = m[1]*x + m[5]*y + m[9]*z  + m[13];
+  GLdouble ez = m[2]*x + m[6]*y + m[10]*z + m[14];
+  GLdouble ew = m[3]*x + m[7]*y + m[11]*z + m[15];
 
+  GLdouble cx = p[0]*ex + p[4]*ey + p[8]*ez  + p[12]*ew;
+  GLdouble cy = p[1]*ex + p[5]*ey + p[9]*ez  + p[13]*ew;
+  GLdouble cz = p[2]*ex + p[6]*ey + p[10]*ez + p[14]*ew;
+  GLdouble cw = p[3]*ex + p[7]*ey + p[11]*ez + p[15]*ew;
+  if (cw == 0.0)
+    return false;
+
+  GLdouble ndcX = cx / cw;
+  GLdouble ndcY = cy / cw;
+  GLdouble ndcZ = cz / cw;
+  if (ndcZ < -1.0 || ndcZ > 1.0)
+    return false;
+
+  double px = v[0] + (ndcX + 1.0) * 0.5 * v[2];
+  double py = v[1] + (ndcY + 1.0) * 0.5 * v[3];
+  double scale = (v[2] > 0 && winW > 0) ? (double)v[2] / (double)winW : 1.0;
+  *sx = (int)((px - v[0]) / scale + 0.5);
+  *sy = (int)(winH - (py - v[1]) / scale + 0.5);
+  return true;
+}
+
+static void drawAxisLetter(const char *letter, int sx, int sy) {
+  int tw = gl_width(letter);
+  int th = gl_height();
+  gl_draw(letter, sx - tw / 2, sy + th / 3);
+}
 
 void voxelFrame_c::drawVoxelSpace() {
 
@@ -508,7 +551,8 @@ void voxelFrame_c::drawVoxelSpace() {
         float cx, cy, cz;
         shape->shape->calculateSize(&cx, &cy, &cz);
 
-        if (colors == anaglyphColor || colors == anaglyphColorL) {
+        const bool ana = (colors == anaglyphColor || colors == anaglyphColorL);
+        if (ana) {
           glColor3f(0.3, 0.3, 0.3); glVertex3f(-1, -1, -1); glVertex3f(cx+1, -1, -1);
           glColor3f(0.6, 0.6, 0.6); glVertex3f(-1, -1, -1); glVertex3f(-1, cy+1, -1);
           glColor3f(0.1, 0.1, 0.1); glVertex3f(-1, -1, -1); glVertex3f(-1, -1, cz+1);
@@ -518,6 +562,48 @@ void voxelFrame_c::drawVoxelSpace() {
           glColor3f(0, 0,    1); glVertex3f(-1, -1, -1); glVertex3f(-1, -1, cz+1);
         }
         glEnd();
+
+        if (pickx < 0) {
+          int xS, xT, yS, yT, zS, zT;
+          bool xOk = projectToWindow(cx + 1.15f, -1, -1, w(), h(), &xS, &xT);
+          bool yOk = projectToWindow(-1, cy + 1.15f, -1, w(), h(), &yS, &yT);
+          bool zOk = projectToWindow(-1, -1, cz + 1.15f, w(), h(), &zS, &zT);
+
+          glDisable(GL_DEPTH_TEST);
+          glDisable(GL_TEXTURE_2D);
+          gl_font(FL_HELVETICA_BOLD, 16);
+
+          glMatrixMode(GL_PROJECTION);
+          glPushMatrix();
+          glLoadIdentity();
+          glOrtho(0, w(), h(), 0, -1, 1);
+          glMatrixMode(GL_MODELVIEW);
+          glPushMatrix();
+          glLoadIdentity();
+
+          if (xOk) {
+            if (ana) glColor3f(0.3f, 0.3f, 0.3f);
+            else glColor3f(0.90f, 0.22f, 0.18f);
+            drawAxisLetter("X", xS, xT);
+          }
+          if (yOk) {
+            if (ana) glColor3f(0.6f, 0.6f, 0.6f);
+            else glColor3f(0.20f, 0.72f, 0.22f);
+            drawAxisLetter("Y", yS, yT);
+          }
+          if (zOk) {
+            if (ana) glColor3f(0.1f, 0.1f, 0.1f);
+            else glColor3f(0.22f, 0.42f, 0.95f);
+            drawAxisLetter("Z", zS, zT);
+          }
+
+          glPopMatrix();
+          glMatrixMode(GL_PROJECTION);
+          glPopMatrix();
+          glMatrixMode(GL_MODELVIEW);
+
+          glEnable(GL_DEPTH_TEST);
+        }
 
 #if 0    // if you enable this, the hotspot will be shown as a small cross
         float x = shapes[piece].shape->getHx();
@@ -1390,22 +1476,31 @@ void voxelFrame_c::updateDebugRotationCells(piecePositions_c *shifting) {
   if (shapes.size() < 2)
     return;
 
-  int rotating = -1;
+  std::vector<char> isRotating(shapes.size(), 0);
   float ang = 0, ax = 0, ay = 0, az = 0, px = 0, py = 0, pz = 0;
+  bool any = false;
   for (unsigned int p = 0; p + 1 < shapes.size(); p++) {
-    if (shifting->getRotationAnim(p, &ang, &ax, &ay, &az, &px, &py, &pz)) {
-      rotating = (int)p;
-      break;
+    float a2, ax2, ay2, az2, px2, py2, pz2;
+    if (shifting->getRotationAnim(p, &a2, &ax2, &ay2, &az2, &px2, &py2, &pz2)) {
+      isRotating[p] = 1;
+      if (!any) {
+        ang = a2; ax = ax2; ay = ay2; az = az2;
+        px = px2; py = py2; pz = pz2;
+        any = true;
+      }
     }
   }
-  if (rotating < 0)
+  if (!any)
     return;
 
   unsigned int axis = 2;
   if (ax != 0) axis = 0;
   else if (ay != 0) axis = 1;
   unsigned int sense = (ang < 0) ? 1 : 0;
-  rotationRules_c::cell_t pivot((int)floor(px), (int)floor(py), (int)floor(pz));
+  rotationRules_c::pivot_t pivot(
+      (int)floor((px - 0.5) * 2.0 + 0.5),
+      (int)floor((py - 0.5) * 2.0 + 0.5),
+      (int)floor((pz - 0.5) * 2.0 + 0.5));
 
   std::vector<rotationRules_c::cell_t> startCells;
   std::vector<rotationRules_c::cell_t> occupied;
@@ -1431,7 +1526,7 @@ void voxelFrame_c::updateDebugRotationCells(piecePositions_c *shifting) {
             rotationRules_c::cell_t c(spx - hx + (int)x,
                                       spy - hy + (int)y,
                                       spz - hz + (int)z);
-            if ((int)p == rotating)
+            if (isRotating[p])
               startCells.push_back(c);
             else
               occupied.push_back(c);
@@ -1578,7 +1673,7 @@ void voxelFrame_c::drawDebugRotationLegend() {
   const int lineH = 14;
   const int boxW = 250;
   const int boxH = pad + 16 + lineGap + 3 * (lineH + lineGap) + pad;
-  const int boxX = w() - margin - boxW;
+  const int boxX = margin;
   const int boxY = margin;
 
   glDisable(GL_LIGHTING);
@@ -1811,6 +1906,38 @@ static void gluPickMatrix(double x, double y, double deltax, double deltay, GLin
   glScalef(viewport[2]/deltax, viewport[3]/deltay, 1.0);
 }
 
+void voxelFrame_c::resize(int X, int Y, int W, int H) {
+
+  /* Native GL windows are not clipped by the parent, so keep this
+   * widget inside the top-level window when the layout overflows. */
+  Fl_Window *top = window();
+  if (top && top != (Fl_Window *)this) {
+    if (X < 0) {
+      W += X;
+      X = 0;
+    }
+    if (Y < 0) {
+      H += Y;
+      Y = 0;
+    }
+    if (X + W > top->w())
+      W = top->w() - X;
+    if (Y + H > top->h())
+      H = top->h() - Y;
+  }
+
+  if (W < 2 || H < 2) {
+    Fl_Gl_Window::resize(X, Y, 2, 2);
+    if (visible())
+      hide();
+    return;
+  }
+
+  Fl_Gl_Window::resize(X, Y, W, H);
+  if (!visible() && parent() && parent()->visible_r())
+    show();
+}
+
 void voxelFrame_c::draw() {
 
   if (!valid()) {
@@ -1922,6 +2049,12 @@ void voxelFrame_c::draw() {
 
   drawDebugRotationLegend();
 
+  if (drawViewCube && pickx < 0 && viewCube && w() >= 48 && h() >= 48)
+    viewCube->draw(rotater, w(), h(), pixels_per_unit());
+
+  if (_useLightning)
+    glEnable(GL_LIGHTING);
+
   if (cb)
     cb->PostDraw();
 }
@@ -1930,6 +2063,29 @@ int voxelFrame_c::handle(int event) {
 
   if (Fl_Gl_Window::handle(event))
     return 1;
+
+  if (viewCube && drawViewCube && pickx < 0) {
+    if (event == FL_ENTER)
+      return 1;
+
+    viewCube_c::Action a = viewCube->handle(event, rotater, w(), h());
+    if (a == viewCube_c::ACT_HOME) {
+      if (homeCb)
+        homeCb(this, homeUser);
+      else
+        rotater->resetRotation();
+      redraw();
+      return 1;
+    }
+    if (a == viewCube_c::ACT_REDRAW) {
+      redraw();
+      return 1;
+    }
+    if (viewCube->isTracking())
+      return 1;
+    if ((event == FL_MOVE || event == FL_LEAVE) && viewCube->contains(Fl::event_x(), Fl::event_y(), w(), h()))
+      return 1;
+  }
 
   switch(event) {
   case FL_PUSH:
@@ -1956,9 +2112,19 @@ int voxelFrame_c::handle(int event) {
     redraw();
 
     return 1;
+
+  case FL_MOVE:
+  case FL_ENTER:
+    return 1;
   }
 
   return 0;
+}
+
+void voxelFrame_c::resetViewRotation(void) {
+  if (rotater)
+    rotater->resetRotation();
+  redraw();
 }
 
 void voxelFrame_c::setSize(double sz) {
@@ -2035,7 +2201,9 @@ void voxelFrame_c::exportToVector(const char * fname, VectorFiletype vt) {
         GL2PS_USE_CURRENT_VIEWPORT | GL2PS_OCCLUSION_CULL, GL_RGBA, 0, NULL, 0, 0, 0,
         bufsize, of, fname);
 
+    drawViewCube = false;
     draw();
+    drawViewCube = true;
 
     state = gl2psEndPage();
   }

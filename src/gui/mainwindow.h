@@ -48,6 +48,10 @@ class FlatButton;
 class LStatusLine;
 class LBlockListGroup_c;
 class LView3dGroup;
+class LFlatButton_c;
+class LFl_Multiline_Input;
+class LFl_Button;
+class statusWindow_c;
 
 class Fl_Tabs;
 class Fl_Group;
@@ -99,7 +103,7 @@ class mainWindow_c : public LFl_Double_Window {
   Fl_Check_Button *SolveDisasm, *CheckRotations, *DebugRotations, *JustCount, *DropDisassemblies, *KeepMirrors, *KeepRotations, *CompleteRotations;
 
   FlatButton *BtnPrepare, *BtnStart, *BtnCont, *BtnStop, *BtnPlacement, *BtnStep, *BtnMovement;
-  FlatButton *BtnNewShape, *BtnDelShape, *BtnCpyShape, *BtnRenShape, *BtnShapeLeft, *BtnShapeRight, *BtnWeightInc, *BtnWeightDec;
+  FlatButton *BtnNewShape, *BtnDelShape, *BtnCpyShape, *BtnRenShape, *BtnShapeLeft, *BtnShapeRight, *BtnWeightInc, *BtnWeightDec, *BtnDetails;
   FlatButton *BtnNewColor, *BtnDelColor, *BtnChnColor;
   FlatButton *BtnNewProb, *BtnDelProb, *BtnCpyProb, *BtnRenProb, *BtnProbLeft, *BtnProbRight;
   FlatButton *BtnColSrtPc, *BtnColSrtRes, *BtnColAdd, *BtnColRem;
@@ -118,9 +122,16 @@ class mainWindow_c : public LFl_Double_Window {
   Fl_Output *TimeUsed, *TimeEst;
 
   LView3dGroup * View3D;
+  layouter_c * view3DStack;
+  statusWindow_c * detailsPanel;
 
   Fl_Group *MinSizeTools;
   Fl_Menu_Bar *MainMenu;
+  LFlatButton_c *notesToggle;
+  layouter_c *notesPanel;
+  LFl_Multiline_Input *notesInput;
+  LFl_Button *notesUpdate;
+  LFl_Button *notesRevert;
   LStatusLine *StatusLine;
   static Fl_Menu_Item menu_MainMenu[];
 
@@ -197,7 +208,8 @@ public:
   void update(void);
 
   /* return an index into the main menu array with the given text */
-  int findMenuEntry(const char * txt);
+  static int findMenuEntry(const char * txt);
+  static void initViewMenuIcons(void);
 
   /* the callback functions, as they are called from normal functions we need
    * to make them public, even though they should not be used from the outside
@@ -274,23 +286,35 @@ public:
   void cb_New(void);
   void cb_Load(void);
   void cb_Load_Ps3d(void);
+  void cb_Load_Scad(void);
   void cb_Save(void);
   void cb_SaveAs(void);
   void cb_Convert(void);
   void cb_AssembliesToShapes(void);
   void cb_Quit(void);
   void cb_About(void);
+  void cb_Tutorial(void);
   void cb_Help(void);
   void cb_Config(void);
-  void cb_Coment(void);
+  void cb_ToggleNotes(void);
+  void cb_ShowNotes(void);
+  void cb_NotesUpdate(void);
+  void cb_NotesRevert(void);
+  void cb_NotesChanged(void);
+  void setNotesButtonsEnabled(bool enabled);
+  void relayoutViewStack(void);
   void cb_Toggle3D(void);
+  void cb_ViewMode(int mode);
   void cb_SolProbSel(LBlockListGroup_c* reason);
 
   void cb_ShapeGroup(void);
   void cb_ImageExport(void);
   void cb_ImageExportVector(void);
   void cb_STLExport(void);
+  void cb_Export_Scad(void);
   void cb_StatusWindow(void);
+  void cb_DetailsClose(void);
+  void cb_DetailsChanged(void);
 
   void cb_SortSolutions(unsigned int by);
   void cb_SortMethod(void);

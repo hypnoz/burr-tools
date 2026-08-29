@@ -64,6 +64,7 @@ public:
   }
 
   void dialog(void);
+  void restoreDialogDefaults(void);
 
 private:
 
@@ -74,7 +75,7 @@ private:
   } cnf_type;
 
   void parse(void);
-  void register_entry(const char *cnf_name, cnf_type cnf_typ, void *cnf_var, long maxlen, bool dialog, const char * dtext, const char * def);
+  void register_entry(const char *cnf_name, cnf_type cnf_typ, void *cnf_var, long maxlen, bool dialog, const char * dtext, const char * dhelp, const char * def);
 
   typedef struct config_data {
     config_data *next;
@@ -84,6 +85,7 @@ private:
     long      maxlen;    // maximum length (for strings)
     bool      dialog;    // shall it be visible in the config dialogue
     const char * dialogText;
+    const char * dialogHelp;
     void *    widget;    // used in the dialogue to save pointer to the widget
     const char * defaultValue; // the variable will have this value, when not initialized in script file
   } config_data;

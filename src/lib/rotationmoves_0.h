@@ -45,7 +45,12 @@ inline bool isRotationDirection(unsigned int dir) {
  *
  * Single-piece and compound (multi-piece rigid) rotations share the same pivot,
  * axis, and sense. Compound moves treat the selected pieces as one body for
- * clearance checks.
+ * clearance checks. Single-voxel pieces are not rotated (spinning a unit cube
+ * cannot free anything).
+ *
+ * Pivots include voxel centres, empty cells in the moving bounding box, and
+ * in-plane faces/edges/corners (Fortran SimpleRot), stored in doubled
+ * cell-index units.
  */
 class rotationMoves_0_c {
 
@@ -65,13 +70,15 @@ class rotationMoves_0_c {
     unsigned int nextsense;
     bool active;
 
-    std::vector<rotationRules_c::cell_t> pivotCells;
+    std::vector<rotationRules_c::pivot_t> pivotCells;
 
     void collectWorldCells(unsigned int pieceIdx, std::vector<rotationRules_c::cell_t> & out) const;
-    void rebuildPivotCells(unsigned int subsetMask);
+    void rebuildPivotCells(unsigned int subsetMask, unsigned int axis);
     disassemblerNode_c * tryCurrentCandidate(void);
 
     static void rotateVector(int * x, int * y, int * z, unsigned int axis, unsigned int sense);
+    static bool rotateDoubled(int * x, int * y, int * z, const rotationRules_c::pivot_t & pivot,
+                              unsigned int axis, unsigned int sense);
     static unsigned char rotationTransformId(unsigned int axis, unsigned int sense);
     static unsigned int nextSubsetMask(unsigned int mask, unsigned int n);
 

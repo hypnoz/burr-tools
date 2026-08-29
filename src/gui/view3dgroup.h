@@ -43,6 +43,7 @@ public:
 
   double getZoom(void) { return slider->value(); }
   void setZoom(double v) { slider->value(v); cb_slider(); }
+  void goHome(void);
 
   void redraw(void);
 

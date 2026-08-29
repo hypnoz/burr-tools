@@ -134,7 +134,8 @@ private:
 
   /**
    * For rotation edges: which piece (index in this node) rotated, and the
-   * world-space pivot voxel. Invalid when not a rotation (rotPiece == 0xFFFF).
+   * world-space pivot in doubled cell-index units (voxel x centre = 2x).
+   * Invalid when not a rotation (rotPiece == 0xFFFF).
    */
   unsigned int rotPiece;
   int16_t rotPivotX, rotPivotY, rotPivotZ;

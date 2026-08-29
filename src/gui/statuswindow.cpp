@@ -27,6 +27,8 @@
 #include "../lib/millable.h"
 #include "../lib/voxeltable.h"
 
+#include <cstdio>
+
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
 #define GL_SILENCE_DEPRECATION 1
@@ -52,7 +54,9 @@ class LFl_Line : public Fl_Box, public layoutable_c {
   }
 };
 
-static void cb_Close_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->hide(); }
+static void cb_ProgressClose_stub(Fl_Widget*, void* v) { ((LFl_Double_Window*)v)->hide(); }
+static void cb_DetailsClose_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_close(); }
+static void cb_DetailsRefresh_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_refresh(); }
 static void cb_RemoveSelected_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_removeSelected(); }
 
 class StatusProgress : public LFl_Double_Window {
@@ -78,7 +82,7 @@ class StatusProgress : public LFl_Double_Window {
 
       LFl_Button * btn = new LFl_Button("Cancel", 0, 2, 1, 1);
       btn->pitch(3);
-      btn->callback(cb_Close_stub, this);
+      btn->callback(cb_ProgressClose_stub, this);
 
       end();
 
@@ -90,7 +94,47 @@ class StatusProgress : public LFl_Double_Window {
     }
 };
 
+statusWindow_c::statusWindow_c(int x, int y, int w, int h)
+  : layouter_c(x, y, w, h), puz(0), cbUser(0), closeCb(0), changedCb(0)
+{
+  box(FL_THIN_UP_BOX);
+  setMinimumSize(200, 180);
+  clip_children(1);
+  end();
+}
+
+void statusWindow_c::setCallbacks(Fl_Callback * onClose, Fl_Callback * onChanged, void * user)
+{
+  closeCb = onClose;
+  changedCb = onChanged;
+  cbUser = user;
+}
+
+void statusWindow_c::clearChildren(void)
+{
+  selection.clear();
+  while (children()) {
+    Fl_Widget * c = child(0);
+    remove(*c);
+    delete c;
+  }
+}
+
+void statusWindow_c::cb_close(void)
+{
+  if (closeCb)
+    closeCb(this, cbUser);
+}
+
+void statusWindow_c::cb_refresh(void)
+{
+  populate(puz);
+}
+
 void statusWindow_c::cb_removeSelected(void) {
+
+  if (!puz)
+    return;
 
   bt_assert(selection.size() <= puz->getNumberOfShapes());
 
@@ -112,20 +156,28 @@ void statusWindow_c::cb_removeSelected(void) {
     }
   }
 
-  again = true;
-  hide();
+  if (changedCb)
+    changedCb(this, cbUser);
+
+  populate(puz);
 }
 
-statusWindow_c::statusWindow_c(puzzle_c * p) : LFl_Double_Window(true), puz(p), again(false) {
+void statusWindow_c::populate(puzzle_c * p) {
 
-  StatusProgress *  stp = new StatusProgress;
+  puz = p;
+  clearChildren();
+
+  if (!p)
+    return;
+
+  Fl_Group * prev = Fl_Group::current();
+  Fl_Group::current(0);
+  StatusProgress * stp = new StatusProgress;
   stp->show();
 
   begin();
 
   char tmp[200];
-
-  label("Shape Information");
 
   unsigned int lines = p->getNumberOfShapes();
   unsigned int head = 3;
@@ -365,24 +417,46 @@ statusWindow_c::statusWindow_c(puzzle_c * p) : LFl_Double_Window(true), puz(p), 
   new LFl_Line(0, 2, cols, 1, 2);
 
   fr->end();
-  fr->setMinimumSize(10, 200);
+  fr->setMinimumSize(10, 140);
   fr->weight(1, 1);
 
   fr = new layouter_c(0, 1, 1, 1);
   fr->pitch(7);
 
-  LFl_Button * btn = new LFl_Button("Close", 0, 1);
-  btn->callback(cb_Close_stub, this);
-  btn->weight(1, 0);
+  int tw = 0, th = 0;
+  fl_font(FL_HELVETICA, FL_NORMAL_SIZE);
+  fl_measure("Remove selected", tw, th);
+  int bw = tw + 28;
 
-  (new LFl_Box(1, 1))->setMinimumSize(5, 0);
+  LFl_Box * leftPad = new LFl_Box(0, 0);
+  leftPad->weight(1, 0);
 
-  btn = new LFl_Button("Remove selected", 2, 1);
+  LFl_Button * btn = new LFl_Button("Refresh", 1, 0);
+  btn->callback(cb_DetailsRefresh_stub, this);
+  btn->tooltip(" Reload piece information ");
+  btn->setMinimumSize(bw, th + 10);
+
+  (new LFl_Box(2, 0))->setMinimumSize(12, 0);
+
+  btn = new LFl_Button("Close", 3, 0);
+  btn->callback(cb_DetailsClose_stub, this);
+  btn->setMinimumSize(bw, th + 10);
+
+  (new LFl_Box(4, 0))->setMinimumSize(12, 0);
+
+  btn = new LFl_Button("Remove selected", 5, 0);
   btn->callback(cb_RemoveSelected_stub, this);
-  btn->weight(1, 0);
+  btn->setMinimumSize(bw, th + 10);
+
+  LFl_Box * rightPad = new LFl_Box(6, 0);
+  rightPad->weight(1, 0);
 
   fr->end();
+  fr->clip_children(1);
 
+  end();
+  if (prev)
+    Fl_Group::current(prev);
 
-  set_modal();
+  resize(x(), y(), w(), h());
 }

@@ -20,20 +20,62 @@
  */
 #include "Layouter.h"
 
+static int shrinkFloorW(layoutable_c *widget, int prefW)
+{
+  if (prefW < 0)
+    prefW = 0;
+
+  int s = widget->getShrinkMinWidth();
+  if (s > 0)
+    return (s < prefW) ? s : prefW;
+
+  const layouter_c *lay = dynamic_cast<const layouter_c*>(widget);
+  if (lay) {
+    int sw, sh;
+    lay->getShrinkMinSize(&sw, &sh);
+    if (sw < 0)
+      sw = 0;
+    return (sw < prefW) ? sw : prefW;
+  }
+
+  return prefW;
+}
+
+static int shrinkFloorH(layoutable_c *widget, int prefH)
+{
+  if (prefH < 0)
+    prefH = 0;
+
+  int s = widget->getShrinkMinHeight();
+  if (s > 0)
+    return (s < prefH) ? s : prefH;
+
+  const layouter_c *lay = dynamic_cast<const layouter_c*>(widget);
+  if (lay) {
+    int sw, sh;
+    lay->getShrinkMinSize(&sw, &sh);
+    if (sh < 0)
+      sh = 0;
+    return (sh < prefH) ? sh : prefH;
+  }
+
+  return prefH;
+}
+
 /* task      what we want to do with the endresult
  * widths    the widths of the different columns of the endgrid
  * heights   the heights of the rows in the calculated grid
  * widgetsW  the minimum widths calculated for each widget
  * widgetsH  the minimum heights for each widget
- * targetW and targetH only used when task = 1, it should be bigger than min size
- *      or strange thing may happen
+ * targetW and targetH only used when task = 1
+ * task = 0: preferred minsize; task = 1: layout to target; task = 2: shrink floors
  */
 void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int> *heights,
                             std::vector<int> *widgetsW, std::vector<int> *widgetsH, int targetW, int targetH) const {
 
   /* right this routine is stolen from the gridbaglayouter of the gcc java awt class set */
 
-  /* task = 0: minsize; task = 1: SIZE */
+  /* task = 0: minsize; task = 1: SIZE; task = 2: shrink floors */
 
   /* these 2 contain the maximum column and rownumber */
   unsigned int max_x = 0;
@@ -77,6 +119,11 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
 
     if (w < widget->getMinWidth()) w = widget->getMinWidth();
     if (h < widget->getMinHeight()) h = widget->getMinHeight();
+
+    if (task == 2) {
+      w = shrinkFloorW(widget, w);
+      h = shrinkFloorH(widget, h);
+    }
 
     (*widgetsW)[i] = w;
     (*widgetsH)[i] = h;
@@ -268,6 +315,84 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
         if (dH <= 0)
           break;
       }
+
+    if (dW < 0 && max_x > 0) {
+      std::vector<int> floorW(max_x, 0), prioX(max_x, 255);
+
+      for (int i = 0; i < children(); i++) {
+        if (!_widgets[i]->visible())
+          continue;
+        unsigned int gX, gY, gW, gH;
+        layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
+        widget->getGridValues(&gX, &gY, &gW, &gH);
+        if (gW != 1)
+          continue;
+        int fl = shrinkFloorW(widget, (*widgetsW)[i]) + 2 * widget->getPitch();
+        if (fl > floorW[gX])
+          floorW[gX] = fl;
+        if (widget->getShrinkPrioX() < prioX[gX])
+          prioX[gX] = widget->getShrinkPrioX();
+      }
+
+      for (unsigned int x = 0; x < max_x; x++) {
+        if (floorW[x] <= 0 || floorW[x] > (*widths)[x])
+          floorW[x] = (*widths)[x];
+      }
+
+      for (int prio = 0; prio <= 255 && dW < 0; prio++) {
+        for (unsigned int x = 0; x < max_x && dW < 0; x++) {
+          if (prioX[x] != prio)
+            continue;
+          int can = (*widths)[x] - floorW[x];
+          if (can <= 0)
+            continue;
+          int take = can;
+          if (take > -dW)
+            take = -dW;
+          (*widths)[x] -= take;
+          dW += take;
+        }
+      }
+    }
+
+    if (dH < 0 && max_y > 0) {
+      std::vector<int> floorH(max_y, 0), prioY(max_y, 255);
+
+      for (int i = 0; i < children(); i++) {
+        if (!_widgets[i]->visible())
+          continue;
+        unsigned int gX, gY, gW, gH;
+        layoutable_c * widget = dynamic_cast<layoutable_c*>(_widgets[i]);
+        widget->getGridValues(&gX, &gY, &gW, &gH);
+        if (gH != 1)
+          continue;
+        int fl = shrinkFloorH(widget, (*widgetsH)[i]) + 2 * widget->getPitch();
+        if (fl > floorH[gY])
+          floorH[gY] = fl;
+        if (widget->getShrinkPrioY() < prioY[gY])
+          prioY[gY] = widget->getShrinkPrioY();
+      }
+
+      for (unsigned int y = 0; y < max_y; y++) {
+        if (floorH[y] <= 0 || floorH[y] > (*heights)[y])
+          floorH[y] = (*heights)[y];
+      }
+
+      for (int prio = 0; prio <= 255 && dH < 0; prio++) {
+        for (unsigned int y = 0; y < max_y && dH < 0; y++) {
+          if (prioY[y] != prio)
+            continue;
+          int can = (*heights)[y] - floorH[y];
+          if (can <= 0)
+            continue;
+          int take = can;
+          if (take > -dH)
+            take = -dH;
+          (*heights)[y] -= take;
+          dH += take;
+        }
+      }
+    }
   }
 }
 
@@ -397,6 +522,27 @@ void layouter_c::getMinSize(int *width, int *height) const {
   *height = mh;
 }
 
+void layouter_c::getShrinkMinSize(int *width, int *height) const {
+
+  std::vector<int> widths;
+  std::vector<int> heights;
+
+  *width = *height = 0;
+
+  if (children()) {
+    calcLayout(2, &widths, &heights, 0, 0);
+    for (unsigned int i = 0; i < widths.size(); i++)
+      *width += widths[i];
+    for (unsigned int i = 0; i < heights.size(); i++)
+      *height += heights[i];
+  }
+
+  if (getShrinkMinWidth() > 0)
+    *width = getShrinkMinWidth();
+  if (getShrinkMinHeight() > 0)
+    *height = getShrinkMinHeight();
+}
+
 void layouter_c::remove(Fl_Widget &w) {
   minsizeValid = false;
   Fl_Group::remove(w);
@@ -415,6 +561,21 @@ void layouter_c::add(Fl_Widget *w) {
   Fl_Group::add(w);
 }
 
+
+int LFl_Tabs::tabStripHeight() const {
+
+  int ls = labelsize();
+
+  for (int i = 0; i < children(); i++) {
+    int cls = child(i)->labelsize();
+    if (cls > ls)
+      ls = cls;
+  }
+
+  /* Default 14pt used a 20px strip (labelsize + 6). Add a little extra
+     so larger tab labels still have air above and below the text. */
+  return ls + 8;
+}
 
 void LFl_Tabs::getMinSize(int *width, int *height) const {
 
@@ -436,7 +597,7 @@ void LFl_Tabs::getMinSize(int *width, int *height) const {
     if (h > *height) *height = h;
   }
 
-  *height += 20;
+  *height += tabStripHeight();
 }
 
 void LFl_Tabs::resize(int x, int y, int w, int h) {
@@ -444,6 +605,7 @@ void LFl_Tabs::resize(int x, int y, int w, int h) {
   Fl_Tabs::resize(x, y, w, h);
 
   Fl_Widget *const * _widgets = array();
+  const int tabH = tabStripHeight();
 
   for (int i = 0; i < children(); i++) {
 
@@ -451,7 +613,7 @@ void LFl_Tabs::resize(int x, int y, int w, int h) {
 
     unsigned int p = widget->getPitch();
 
-    _widgets[i]->resize(x+p, y+20+p, w-2*p, h-20-2*p);
+    _widgets[i]->resize(x+p, y+tabH+p, w-2*p, h-tabH-2*p);
   }
 }
 
@@ -496,9 +658,12 @@ void LFl_Double_Window::show(void) {
     int wy, hy;
     lay->getMinSize(&wy, &hy);
 
-    if (res)
-      size_range(wy, hy, 0, 0);
-    else
+    if (res) {
+      if (customMinRange)
+        size_range(minRangeW, minRangeH, 0, 0);
+      else
+        size_range(wy, hy, 0, 0);
+    } else
       size_range(wy, hy, wy, hy);
 
     if (!placed || wy > w() || hy > h()) {

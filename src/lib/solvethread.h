@@ -104,6 +104,13 @@ class solveThread_c : public assembler_cb, public thread_c {
 
     bool disassemblyEnabled(void) const { return (parameters & PAR_DISASSM) != 0; }
     unsigned int getDisassemblyPending(void) const { return disasmPending.load(std::memory_order_relaxed); }
+    unsigned int getDisassemblyCompleted(void) const { return disasmCompleted.load(std::memory_order_relaxed); }
+    float getAverageDisassemblySeconds(void) const {
+      unsigned int n = disasmCompleted.load(std::memory_order_relaxed);
+      if (n == 0)
+        return 0;
+      return (float)disasmMsTotal.load(std::memory_order_relaxed) / 1000.0f / (float)n;
+    }
 
   private:
 
@@ -186,6 +193,8 @@ class solveThread_c : public assembler_cb, public thread_c {
     std::queue<disasmTask_c> disasmQueue;
     std::atomic<bool> disasmWorkerStop;
     std::atomic<unsigned int> disasmPending;
+    std::atomic<unsigned int> disasmCompleted;
+    std::atomic<unsigned long long> disasmMsTotal;
 
     void startDisasmWorker(void);
     void stopDisasmWorker(void);

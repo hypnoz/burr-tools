@@ -108,9 +108,9 @@ void disasmToMoves_c::setStep(float step, bool fadeOut, bool center_active) {
           rotAxisX[i] = (axis == 0) ? 1.0f : 0.0f;
           rotAxisY[i] = (axis == 1) ? 1.0f : 0.0f;
           rotAxisZ[i] = (axis == 2) ? 1.0f : 0.0f;
-          rotPivotX[i] = (float)pvx + 0.5f;
-          rotPivotY[i] = (float)pvy + 0.5f;
-          rotPivotZ[i] = (float)pvz + 0.5f;
+          rotPivotX[i] = (float)pvx * 0.5f + 0.5f;
+          rotPivotY[i] = (float)pvy * 0.5f + 0.5f;
+          rotPivotZ[i] = (float)pvz * 0.5f + 0.5f;
         } else if (frac >= 0.5f) {
           /* Fallback without pivot metadata: snap */
           moves[4*i+0] = moves2[4*i+0];
@@ -195,8 +195,12 @@ bool disasmToMoves_c::findRotationArrivalRec(const separation_c * t, int step, u
   if (step >= 0 && (unsigned int)step <= t->getMoves()) {
     const state_c * st = t->getState((unsigned int)step);
     if (st->isRotationArrival()) {
-      unsigned int local = st->getRotPiece();
-      if (local < t->getPieceNumber() && t->getPieceName(local) == pieceName) {
+      /* Compound rotations store one primary rotPiece but share pivot/axis/sense.
+       * Any piece in this separation that is actually turning (caller already
+       * checked orientation change) uses the same tumble. */
+      for (unsigned int k = 0; k < t->getPieceNumber(); k++) {
+        if (t->getPieceName(k) != pieceName)
+          continue;
         *pvx = st->getRotPivotX();
         *pvy = st->getRotPivotY();
         *pvz = st->getRotPivotZ();

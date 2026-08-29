@@ -40,6 +40,7 @@ class assembly_c;
 class piecePositions_c;
 
 class rotater_c;
+class viewCube_c;
 
 class Polyhedron;
 
@@ -156,6 +157,9 @@ class voxelFrame_c : public Fl_Gl_Window {
 
     void setInsideVisible(bool on);
 
+    void setHomeCallback(Fl_Callback * cb, void * user) { homeCb = cb; homeUser = user; }
+    void resetViewRotation(void);
+
   private:
 
     assembly_c * curAssembly; // the currently shown assembly (if there is one)
@@ -221,6 +225,11 @@ class voxelFrame_c : public Fl_Gl_Window {
 
     VoxelViewCallbacks * cb;
 
+    viewCube_c * viewCube;
+    Fl_Callback * homeCb;
+    void * homeUser;
+    bool drawViewCube;
+
     std::vector<shapeInfo> shapes;
 
     colorMode colors;
@@ -240,6 +249,7 @@ class voxelFrame_c : public Fl_Gl_Window {
     int pickx, picky;
 
     void draw();
+    void resize(int x, int y, int w, int h);
     int handle(int event);
     void drawDebugRotationCells();
     void drawDebugRotationLegend();

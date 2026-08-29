@@ -28,6 +28,8 @@
 #include "solution.h"
 #include "voxel.h"
 
+#include <chrono>
+
 namespace {
 
 enum {
@@ -43,6 +45,24 @@ int solutionActionFromParameters(int parameters) {
   if (parameters & solveThread_c::PAR_DISASSM) action += 2;
   return action;
 }
+
+struct disasmDurationGuard_c {
+  std::atomic<unsigned int> * count;
+  std::atomic<unsigned long long> * totalMs;
+  std::chrono::steady_clock::time_point t0;
+
+  disasmDurationGuard_c(std::atomic<unsigned int> * c, std::atomic<unsigned long long> * t)
+    : count(c), totalMs(t), t0(std::chrono::steady_clock::now()) {}
+
+  ~disasmDurationGuard_c() {
+    long long ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::steady_clock::now() - t0).count();
+    if (ms < 0)
+      ms = 0;
+    totalMs->fetch_add((unsigned long long)ms, std::memory_order_relaxed);
+    count->fetch_add(1, std::memory_order_relaxed);
+  }
+};
 
 } // namespace
 
@@ -165,7 +185,9 @@ return_after_prep(false),
 disassm(0),
 assm(0),
 disasmWorkerStop(false),
-disasmPending(0)
+disasmPending(0),
+disasmCompleted(0),
+disasmMsTotal(0)
 {
 
   if (par & PAR_DISASSM)
@@ -339,6 +361,8 @@ unsigned int solveThread_c::findInsertIndexByRotations(unsigned int lev) const {
 }
 
 void solveThread_c::processDisassembly(const disasmTask_c & task, int _solutionAction) {
+
+  disasmDurationGuard_c duration(&disasmCompleted, &disasmMsTotal);
 
   assembly_c * a = task.assembly;
 

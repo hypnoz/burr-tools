@@ -26,6 +26,22 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include <math.h>
+#include <string>
+
+static std::string doubledPivotAttr(int doubled) {
+  char buf[32];
+  if (doubled % 2 == 0)
+    snprintf(buf, sizeof(buf), "%d", doubled / 2);
+  else
+    snprintf(buf, sizeof(buf), "%.1f", doubled * 0.5);
+  return std::string(buf);
+}
+
+static int parseDoubledPivot(const std::string & s) {
+  return (int)floor(atof(s.c_str()) * 2.0 + 0.5);
+}
 
 /* template function to get space separated integer values
  * from a string and enter these into an iterator
@@ -163,9 +179,9 @@ void state_c::save(xmlWriter_c & xml, unsigned int piecenumber, bool includeRota
     if (rotPiece != (unsigned int)-1) {
       xml.newTag("rotation");
       xml.newAttrib("piece", rotPiece);
-      xml.newAttrib("px", rotPivotX);
-      xml.newAttrib("py", rotPivotY);
-      xml.newAttrib("pz", rotPivotZ);
+      xml.newAttrib("px", doubledPivotAttr(rotPivotX));
+      xml.newAttrib("py", doubledPivotAttr(rotPivotY));
+      xml.newAttrib("pz", doubledPivotAttr(rotPivotZ));
       xml.newAttrib("axis", rotAxis);
       xml.newAttrib("sense", rotSense);
       xml.endTag("rotation");
@@ -234,9 +250,9 @@ state_c::state_c(xmlParser_c & pars, unsigned int pn)
         s = pars.getAttributeValue("piece");
         if (!s.length()) pars.exception("rotation needs piece");
         rotPiece = (unsigned int)atoi(s.c_str());
-        s = pars.getAttributeValue("px"); rotPivotX = atoi(s.c_str());
-        s = pars.getAttributeValue("py"); rotPivotY = atoi(s.c_str());
-        s = pars.getAttributeValue("pz"); rotPivotZ = atoi(s.c_str());
+        s = pars.getAttributeValue("px"); rotPivotX = parseDoubledPivot(s);
+        s = pars.getAttributeValue("py"); rotPivotY = parseDoubledPivot(s);
+        s = pars.getAttributeValue("pz"); rotPivotZ = parseDoubledPivot(s);
         s = pars.getAttributeValue("axis"); rotAxis = (unsigned int)atoi(s.c_str());
         s = pars.getAttributeValue("sense"); rotSense = (unsigned int)atoi(s.c_str());
         pars.skipSubTree();

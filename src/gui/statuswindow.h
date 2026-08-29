@@ -27,23 +27,29 @@
 
 class puzzle_c;
 
-class statusWindow_c : public LFl_Double_Window {
+class statusWindow_c : public layouter_c {
 
   private:
 
     puzzle_c * puz;
+    void * cbUser;
+    Fl_Callback * closeCb;
+    Fl_Callback * changedCb;
 
     std::vector<LFl_Check_Button*> selection;
-    bool again;
+
+    void clearChildren(void);
 
   public:
 
-    statusWindow_c(puzzle_c * p);
+    statusWindow_c(int x, int y, int w, int h);
+
+    void setCallbacks(Fl_Callback * onClose, Fl_Callback * onChanged, void * user);
+    void populate(puzzle_c * p);
 
     void cb_removeSelected(void);
-
-    bool getAgain(void) { return again; }
-
+    void cb_close(void);
+    void cb_refresh(void);
 };
 
 #endif

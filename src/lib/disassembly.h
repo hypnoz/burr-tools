@@ -112,7 +112,8 @@ class state_c {
   /** optional orientations; null for legacy states without rotation moves */
   int *dt;
 
-  /** rotation that produced this state; rotPiece == (unsigned int)-1 if none */
+  /** rotation that produced this state; rotPiece == (unsigned int)-1 if none.
+   *  Pivot coordinates are doubled cell-index (voxel x centre = 2x). */
   unsigned int rotPiece;
   int rotPivotX, rotPivotY, rotPivotZ;
   unsigned int rotAxis, rotSense;

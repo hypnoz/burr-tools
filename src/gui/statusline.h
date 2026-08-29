@@ -8,34 +8,20 @@
  * modify it under the terms of the GNU General Public License
  * as published by the Free Software Foundation; either version 2
  * of the License, or (at your option) any later version.
-
- * This program is distributed in the hope that it will be useful,
- * but WITHOUT ANY WARRANTY; without even the implied warranty of
- * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
-
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
 #ifndef __STATUS_LINE_H__
 #define __STATUS_LINE_H__
 
 #include "Layouter.h"
-#include "Images.h"
 #include "voxelframe.h"
 
-class ButtonGroup_c;
-
-// a status line containing text and a button to toggle
-// between coloured and normal view
+// a status line containing text; 3D colour mode is chosen from the View menu
 class LStatusLine : public layouter_c {
 
 private:
 
-  ButtonGroup_c *mode;
   LFl_Box * text;
-  pixmapList_c pm;
+  int colorModeIndex;
 
 public:
 
@@ -43,7 +29,7 @@ public:
 
   void setText(const char * t);
   voxelFrame_c::colorMode getColorMode(void) const;
-  void callback(Fl_Callback* fkt, void * dat);
+  void setColorModeIndex(int i);
 
   virtual void getMinSize(int *width, int *height) const {
     *width = 30;

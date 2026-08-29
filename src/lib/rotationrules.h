@@ -27,14 +27,19 @@
  * Clearance / validity rules for 90° piece rotations during disassembly.
  *
  * - End position must not overlap other pieces
+ * - Same-layer sandwich (start and end): a moving voxel must not have static
+ *   face-neighbours on both opposite in-plane sides on the same axial layer
+ * - Perpendicular-plane capture: on a U-slice (resp. V-slice) with at least
+ *   two moving and two static voxels, opposite static walls in V (resp. U)
+ *   at matching axial coords reject the axis
  * - Along the rotation axis, on each layer where the moving piece face-touches
  *   another piece, consider only pivot-column moving voxels (same in-plane
  *   coords as the pivot). Collect static ±U/±V face neighbours of those cells.
  *   If one touching layer has static on -U and a different touching layer has
- *   static on +U (same for V), reject. Same-layer opposites are ignored.
- *   Layers with no face contact to the other piece are skipped.
- * - Arc sweep: sample the continuous 90° path so a voxel cannot clip through
- *   another piece mid-turn even when start and end are clear
+ *   static on +U (same for V), reject. Same-layer opposites are handled by
+ *   the sandwich rule above. Layers with no face contact are skipped.
+ * - Arc sweep: sample the continuous 90° path of beveled squares (remove
+ *   0.0405, matching Fortran) with an optional mid-turn in-plane wiggle
  *
  * Additional named rules can be added here after physical validation.
  */
@@ -48,6 +53,17 @@ public:
     cell_t(int x_, int y_, int z_) : x(x_), y(y_), z(z_) {}
   };
 
+  /**
+   * Rotation centre in doubled cell-index units: voxel (x,y,z) centre is
+   * (2x, 2y, 2z); a face/edge/corner uses an odd coordinate on that axis.
+   * World cube centre is hx/2 + 0.5.
+   */
+  struct pivot_t {
+    int hx, hy, hz;
+    pivot_t() : hx(0), hy(0), hz(0) {}
+    pivot_t(int hx_, int hy_, int hz_) : hx(hx_), hy(hy_), hz(hz_) {}
+  };
+
   rotationRules_c(void) {}
   virtual ~rotationRules_c(void) {}
 
@@ -57,22 +73,23 @@ public:
    * @param occupied   world cells occupied by pieces that are not moving
    * @param startCells world cells of the moving piece before rotation
    * @param endCells   world cells of the moving piece after rotation
-   * @param pivot      world cell used as rotation centre (on the piece)
+   * @param pivot      rotation centre (doubled cell-index, see pivot_t)
    * @param axis       0=X, 1=Y, 2=Z
    * @param sense      0 = +90°, 1 = -90°
    */
   virtual bool allowRotation(const std::vector<cell_t> & occupied,
                              const std::vector<cell_t> & startCells,
                              const std::vector<cell_t> & endCells,
-                             const cell_t & pivot,
+                             const pivot_t & pivot,
                              unsigned int axis,
                              unsigned int sense) const;
 
   /**
    * Collect cells useful for Debug Rotations visualisation of one candidate.
    *
-   * @param outBlocking    static cells that currently violate arc-sweep or
-   *                       participate in an axis-cross opposition (hard conflicts)
+ * @param outBlocking    static cells that currently violate arc-sweep,
+ *                       same-layer sandwich, perpendicular-plane capture, or
+ *                       axis-cross opposition (hard conflicts)
    * @param outClearance   mid-path lattice cells that are not part of the moving
    *                       piece at start — empty cells here would block if filled
  * @param outRestricted  empty ±in-plane slots face-adjacent to a moving voxel
@@ -80,7 +97,7 @@ public:
    */
   void collectDebugConflictCells(const std::vector<cell_t> & occupied,
                                  const std::vector<cell_t> & startCells,
-                                 const cell_t & pivot,
+                                 const pivot_t & pivot,
                                  unsigned int axis,
                                  unsigned int sense,
                                  std::vector<cell_t> & outBlocking,

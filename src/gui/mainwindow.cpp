@@ -35,7 +35,6 @@
 #include "BlockList.h"
 #include "Images.h"
 
-#include "multilinewindow.h"
 #include "assertwindow.h"
 #include "togglebutton.h"
 #include "voxeleditgroup.h"
@@ -53,6 +52,7 @@
 #include "LFl_Tile.h"
 
 #include "../lib/ps3dloader.h"
+#include "../lib/scadloader.h"
 #include "../lib/voxel.h"
 #include "../lib/puzzle.h"
 #include "../lib/problem.h"
@@ -90,12 +90,16 @@
 #include <FL/Fl_Output.H>
 #include <FL/Fl_Value_Slider.H>
 #include <FL/Fl_Menu_Bar.H>
+#include <FL/Fl_Multi_Label.H>
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Value_Input.H>
 #include <FL/fl_ask.H>
+#include <FL/Fl_Text_Display.H>
+#include <FL/Fl_Text_Buffer.H>
 #pragma GCC diagnostic pop
 
 #include <fstream>
+#include <cstring>
 
 /* returns true, if file exists, this is not the
  optimal way to do this. It would be better to open
@@ -1371,7 +1375,6 @@ void mainWindow_c::cb_PcVis(void) {
   View3D->getView()->updateVisibility(PcVis);
 }
 
-static void cb_Status_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Status(); }
 void mainWindow_c::cb_Status(void) {
   View3D->getView()->showColors(puzzle, StatusLine->getColorMode());
 }
@@ -1500,13 +1503,35 @@ void mainWindow_c::cb_Load(void) {
   if (threadStopped()) {
 
     if (changed)
-      if (fl_choice("Puzzle changed; are you sure?", "Cancel", "Load", 0) == 0)
+      if (fl_choice("Puzzle changed; are you sure?", "Cancel", "Open", 0) == 0)
         return;
 
-    const char * f = bt_file_chooser_open("Load Puzzle", "Puzzle Files\t*.xmpuzzle", "");
+    const char * f = bt_file_chooser_open("Open Puzzle", "Puzzle Files\t*.xmpuzzle", "");
 
     tryToLoad(f);
   }
+}
+
+static bool hasFileExtension(const char * path, const char * ext)
+{
+  if (!path || !ext)
+    return false;
+
+  size_t n = strlen(path);
+  size_t e = strlen(ext);
+  if (n < e)
+    return false;
+
+  const char * p = path + n - e;
+  for (size_t i = 0; i < e; i++) {
+    char a = p[i];
+    char b = ext[i];
+    if (a >= 'A' && a <= 'Z') a = (char)(a - 'A' + 'a');
+    if (b >= 'A' && b <= 'Z') b = (char)(b - 'A' + 'a');
+    if (a != b)
+      return false;
+  }
+  return true;
 }
 
 static void cb_Load_Ps3d_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Load_Ps3d(); }
@@ -1518,13 +1543,58 @@ void mainWindow_c::cb_Load_Ps3d(void) {
       if (fl_choice("Puzzle changed; are you sure?", "Cancel", "Load", 0) == 0)
         return;
 
-    const char * f = bt_file_chooser_open("Import PuzzleSolver3D File", "PuzzleSolver3D Files\t*.puz", "");
+    const char * f = bt_file_chooser_open("Import PuzzleSolver3D File",
+                                          "PuzzleSolver3D Files\t*.puz",
+                                          "");
 
     if (f) {
 
       std::ifstream in(f);
-
       puzzle_c * newPuzzle = loadPuzzlerSolver3D(&in);
+
+      if (!newPuzzle) {
+        fl_alert("Could not load puzzle, sorry!");
+        return;
+      }
+
+      if (fname) delete [] fname;
+      fname = new char[strlen(f)+1];
+      strcpy(fname, f);
+
+      char nm[300];
+      snprintf(nm, 299, "BurrTools - %s", fname);
+      label(nm);
+
+      ReplacePuzzle(newPuzzle);
+      updateInterface();
+
+      TaskSelectionTab->value(TabPieces);
+      activateShape(PcSel->getSelection());
+      StatPieceInfo(PcSel->getSelection());
+
+      changed = false;
+    }
+  }
+}
+
+static void cb_Load_Scad_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Load_Scad(); }
+void mainWindow_c::cb_Load_Scad(void) {
+
+  if (threadStopped()) {
+
+    if (changed)
+      if (fl_choice("Puzzle changed; are you sure?", "Cancel", "Load", 0) == 0)
+        return;
+
+    const char * f = bt_file_chooser_open("Import Puzzlecad File",
+                                          "OpenSCAD Files\t*.scad",
+                                          "");
+
+    if (f) {
+
+      std::ifstream in(f);
+      puzzle_c * newPuzzle = loadOpenScadPuzzle(&in);
+
       if (!newPuzzle) {
         fl_alert("Could not load puzzle, sorry!");
         return;
@@ -1784,20 +1854,79 @@ void mainWindow_c::cb_Config(void) {
   activateConfigOptions();
 }
 
-static void cb_Comment_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Coment(); }
-void mainWindow_c::cb_Coment(void) {
+static void cb_ToggleNotes_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ToggleNotes(); }
+void mainWindow_c::cb_ToggleNotes(void) {
 
-  multiLineWindow_c win("Edit Comment", "Change the comment for the current puzzle", puzzle->getComment().c_str());
-
-  win.show();
-
-  while (win.visible())
-    Fl::wait();
-
-  if (win.saveChanges()) {
-    puzzle->setComment(win.getText());
-    changed = true;
+  if (notesPanel->visible()) {
+    notesPanel->hide();
+    notesToggle->copy_label("Show Notes");
+    notesToggle->redraw();
+    int nw = w() - 400;
+    if (nw < 400)
+      nw = 400;
+    resize(x(), y(), nw, h());
+  } else {
+    notesPanel->show();
+    notesToggle->copy_label("Hide Notes");
+    notesToggle->redraw();
+    resize(x(), y(), w() + 400, h());
   }
+
+  redraw();
+}
+
+static void cb_ShowNotes_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ShowNotes(); }
+void mainWindow_c::cb_ShowNotes(void) {
+
+  if (notesPanel->visible())
+    return;
+
+  notesPanel->show();
+  notesToggle->copy_label("Hide Notes");
+  notesToggle->redraw();
+  resize(x(), y(), w() + 400, h());
+  redraw();
+}
+
+static void cb_NotesUpdate_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_NotesUpdate(); }
+void mainWindow_c::cb_NotesUpdate(void) {
+
+  const char * text = notesInput->value();
+  puzzle->setComment(text ? text : "");
+  changed = true;
+  setNotesButtonsEnabled(false);
+}
+
+static void cb_NotesRevert_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_NotesRevert(); }
+void mainWindow_c::cb_NotesRevert(void) {
+  notesInput->value(puzzle->getComment().c_str());
+  setNotesButtonsEnabled(false);
+}
+
+static void cb_NotesChanged_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_NotesChanged(); }
+void mainWindow_c::cb_NotesChanged(void) {
+  const char * text = notesInput->value();
+  const char * saved = puzzle->getComment().c_str();
+  setNotesButtonsEnabled(strcmp(text ? text : "", saved ? saved : "") != 0);
+}
+
+void mainWindow_c::setNotesButtonsEnabled(bool enabled) {
+  if (!notesUpdate || !notesRevert)
+    return;
+  if (enabled) {
+    notesUpdate->activate();
+    notesRevert->activate();
+  } else {
+    notesUpdate->deactivate();
+    notesRevert->deactivate();
+  }
+}
+
+void mainWindow_c::relayoutViewStack(void) {
+  if (!view3DStack)
+    return;
+  view3DStack->resize(view3DStack->x(), view3DStack->y(), view3DStack->w(), view3DStack->h());
+  redraw();
 }
 
 static void cb_ImageExportVector_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ImageExportVector(); }
@@ -1837,26 +1966,75 @@ void mainWindow_c::cb_STLExport(void) {
   }
 }
 
+static void cb_Export_Scad_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Export_Scad(); }
+void mainWindow_c::cb_Export_Scad(void) {
+
+  if (puzzle->getGridType()->getType() != gridType_c::GT_BRICKS) {
+    fl_alert("Puzzlecad export is only available for cube-grid puzzles.");
+    return;
+  }
+
+  if (puzzle->getNumberOfShapes() == 0) {
+    fl_alert("Nothing to export.");
+    return;
+  }
+
+  const char * preset = "";
+  if (fname && fname[0])
+    preset = fname;
+
+  const char * f = bt_file_chooser_save("Export Puzzlecad File", "OpenSCAD Files\t*.scad", preset);
+
+  if (!f)
+    return;
+
+  if (fileExists(f) && !fl_choice("File exists; overwrite?", "Cancel", "Overwrite", 0))
+    return;
+
+  char f2[1000];
+  if (hasFileExtension(f, ".scad"))
+    snprintf(f2, 1000, "%s", f);
+  else
+    snprintf(f2, 1000, "%s.scad", f);
+
+  std::ofstream out(f2);
+  unsigned int prob = 0;
+  if (puzzle->getNumberOfProblems() &&
+      problemSelector->getSelection() < puzzle->getNumberOfProblems())
+    prob = problemSelector->getSelection();
+
+  if (!out || !saveOpenScadPuzzle(out, puzzle, fname ? fname : f2, prob)) {
+    fl_alert("Could not export puzzlecad file.");
+    return;
+  }
+}
+
 static void cb_StatusWindow_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_StatusWindow(); }
 void mainWindow_c::cb_StatusWindow(void) {
 
-  bool again;
+  if (!detailsPanel)
+    return;
 
-  do {
+  detailsPanel->show();
+  relayoutViewStack();
+  detailsPanel->populate(puzzle);
+  relayoutViewStack();
+}
 
-    statusWindow_c w(puzzle);
-    w.show();
+static void cb_DetailsClose_stub(Fl_Widget*, void* v) { ((mainWindow_c*)v)->cb_DetailsClose(); }
+void mainWindow_c::cb_DetailsClose(void) {
 
-    while (w.visible()) {
-      Fl::wait();
-    }
+  if (!detailsPanel)
+    return;
 
-    again = w.getAgain();
+  detailsPanel->hide();
+  relayoutViewStack();
+}
 
-    if (again)
-      changed = true;
+static void cb_DetailsChanged_stub(Fl_Widget*, void* v) { ((mainWindow_c*)v)->cb_DetailsChanged(); }
+void mainWindow_c::cb_DetailsChanged(void) {
 
-  } while (again);
+  changed = true;
 
   unsigned int current = PcSel->getSelection();
 
@@ -1867,9 +2045,7 @@ void mainWindow_c::cb_StatusWindow(void) {
       current--;
 
   activateShape(current);
-
   PcSel->setSelection(current);
-
   updateInterface();
 }
 
@@ -1885,12 +2061,51 @@ void mainWindow_c::cb_Toggle3D(void) {
   }
 }
 
+static void cb_ViewMode0_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ViewMode(0); }
+static void cb_ViewMode1_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ViewMode(1); }
+static void cb_ViewMode2_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ViewMode(2); }
+static void cb_ViewMode3_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ViewMode(3); }
+
+static int viewModeMenuIdx[4];
+
+void mainWindow_c::cb_ViewMode(int mode) {
+
+  for (int i = 0; i < 4; i++)
+    menu_MainMenu[viewModeMenuIdx[i]].clear();
+  if (mode >= 0 && mode < 4)
+    menu_MainMenu[viewModeMenuIdx[mode]].set();
+
+  StatusLine->setColorModeIndex(mode);
+  cb_Status();
+}
+
 static void cb_About_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_About(); }
 void mainWindow_c::cb_About(void) {
 
   fl_message("This is the GUI for BurrTools\n"
+             "\n"
+             "This version is a fork of the original BurrTools 0.7.1, hosted at\n"
+             "https://github.com/hypnoz/burr-tools\n"
+             "\n"
+             "A high level summary of important changes that were made:\n"
+             "- Stability improvements\n"
+             "- Support for rotations instead of just linear moves\n"
+             "- More options for the CLI tool burrTxt\n"
+             "- Import and export from Puzzlecad (OpenSCAD)\n"
+             "- Many subtle UI changes which I hope are improvements\n"
+             "  - Better button layouts and labels\n"
+             "  - Helper cube in the 3D view of the shape builder\n"
+             "  - Cleaner settings menu with additional options\n"
+             "  - Better layout of the Notes and Details panels\n"
+             "  - More clear names for the Solver checkboxes and additional options\n"
+             "  - Support for sorting by rotations and seeing rotation information\n"
+             "- Can save extra rotation data in the save file while still being\n"
+             "  compatible with previous versions\n"
+             "\n"
+             "Original README:\n"
+             "\n"
              "BurrTools (c) 2003-2025 by Andreas Röver\n"
-	     "with patches from Arne Köhn, Bryan Turner, Derek Bosch, Michael Brown\n"
+             "with patches from Arne Köhn, Bryan Turner, Derek Bosch, Michael Brown\n"
              "The latest version is available at github.com/burr-tools/burr-tools\n"
              "\n"
              "This software is distributed under the GPL\n"
@@ -1901,9 +2116,92 @@ void mainWindow_c::cb_About(void) {
              "\n"
              "The program uses\n"
              "- Fltk, libZ, libpng, gzstream, gl2ps\n"
-             "- Fl_Table (http://3dsite.com/people/erco/Fl_Table/)\n"
+             "- FI_Table (http://3dsite.com/people/erco/FI_Table/)\n"
              "- tr by Brian Paul (http://www.mesa3d.org/brianp/TR.html)\n"
             );
+}
+
+static const char tutorialText[] = R"TUTORIAL(This tutorial will be a brief overview of how to make and solve a puzzle with BurrTools. It will only cover the "Brick" type since that is the most basic, and the others should be clear once you know that one.
+
+-- Creating shapes:
+The first step on the Entities tab is to create a new shape. This is done by clicking the "New" button. Below the shapes list, you will see options to set the X/Y/Z size and a grid to draw the piece. The "Colors" section at the bottom is more advanced, and allows restrictions for where pieces can go in the final solution. Once the correct X/Y/Z size is set, make sure the solid red square is selected. This is the normal "static" voxel, shapes can only use this. The green square next to it is the "variable" voxel, which can only be used in the "solution" shape to allow either a shape or empty space to occupy that position. There are other buttons here to play with, the next most useful are the 3 at the right which allow filling an entire row of X/Y/Z at a time. There are also tabs at the top to let you rotate or move shapes in the grid.
+
+The grid below has a slider on the left to change the Z layer. You can think of this grid and slider like you have a puzzle directly in front of you, the grid is the voxels you see and the slider is the layers going back away from you. When the slider is at the bottom, it is the "back" layer of the puzzle, the furthest away. The top of the slider is the "front" layer, the closest to you. As you draw voxels in the grid they are always relative to this view.
+
+If the puzzle has a box, tray, or frame, this object needs to also be mapped as a shape. BurrTools considers this as a piece of the puzzle that needs to be considered during the solving process.
+
+The final shape to create is the "solution" shape. This is the shape that matches the final assembled shape of the puzzle. This shape can use both static and variable voxels. Static requires that a piece be present in that spot. Variable can be occupied by either a shape or empty space.
+
+After all shapes, frame/box/tray, and the solution shape are created, we will move on to building the puzzle.
+
+-- Creating the puzzle:
+The Puzzle tab is where we combine the shapes and solution to analyze as a puzzle. There may be many more shapes than you want to use in a single puzzle, so we will select a subset of pieces here. Press the "New" button to create a new puzzle, and you will be given the full list of shapes to choose from. First, select the final solution shape and then press the "Set Result" button. After that, we need to add all the shapes that will be used to make the puzzle. For each shape you want you can click it, then press the +1 button to add, or -1 to remove it. If you press +1 multiple times it will add multiple copies of the same shape. The "min=0" button will set the shape to be optional, that either 0 or 1+ copies can be used. You can create multiple puzzles with different sets of shapes. It's helpful to "Label" each puzzle with a name so you can easily tell them apart.
+
+-- Solving the puzzle:
+The Solver tab is where we solve the puzzle. You will see a list of puzzles you have created on the top left. There are many check boxes to change the puzzle is solved. Each one has a hover tool tip to explain what it does. The primary one is "Disassemble" which will try to show only assemblies which can be disassembled. There are options for checking for rotations, and limiting to just a count or level without the solving animations. Level is the number of moves to remove the first piece from an assembled puzzle. Other checks will reduce or keep symmetric/mirrored/rotated solutions.
+
+After choosing the solve options, press the "Solve" button. If everything was set up correctly, you will see a progress bar at the bottom of the screen. When the solving is complete, you will see a list of solutions. If something wasn't set up correctly, there will be an error about voxels missing from the final shape or too many, etc. Once the solve is completed, the number of Assemblies and Solutions will be displayed. The "Assemblies" count is the number of unique assemblies that can be made from the puzzle. The "Solutions" count is the number of those assemblies which can actually be disassembled.
+
+Only the top 100 solutions are kept, and there is a "Solution" slider to scroll through them. For each solution, you will see a "Move" slider. There is a list of numbers like 12 (5.3.2.1.1) which represents the total moves to disassemble the puzzle, and then inside the parentheses are the number of moves to remove each piece from the puzzle. If you drag the slider, you will see an animation of the puzzle being disassembled step by step, along with the step number on the left of the slider.
+
+For now ignore the "Advanced Filters" buttons, but the list of pieces at the bottom is useful. Each one can be selected to turn that piece either into a wire frame, or totally invisble. It's very helpful to see other pieces that are obstructed from view.
+
+-- More Advanced Topics:
+The main things to learn from here are color constraints and groups. Color constraints are a way to restrict where pieces can go in the final solution. Groups are a way to group pieces together so they can be treated as a single piece. Color constraints are set in the Entities tab, by creating a new color at the bottom. When you add a voxel to a piece, it will have a small color indicator on it showing that color constraint is part of the voxel. Add the color to all the voxels in the piece, and then in the solution shape, add that same color constraint to where the piece must go.
+Groups are set in the Puzzle tab, using the "Groups" button. If you want 2 pieces to be treated as a single piece, choose the "Add Group" button, then next to the two pieces put a number like 1 or 2 that is the same for both pieces. Back in the list of pieces, you will see a label like "G1(2)" which is the main group number and sub group number within that group.
+
+For even more advanced topics or learning, visit the BurrTools documentation website at https://burrtools.sourceforge.net/gui-doc/toc.html
+The documentation was written for an older version of BurrTools, but the concepts are still valid.
+)TUTORIAL";
+
+static void cb_TutorialClose_stub(Fl_Widget* /*o*/, void* v) { ((Fl_Double_Window*)v)->hide(); }
+static void cb_Tutorial_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Tutorial(); }
+
+class LFl_Text_Display : public Fl_Text_Display, public layoutable_c {
+  public:
+  LFl_Text_Display(int x = 0, int y = 0, int w = 1, int h = 1)
+    : Fl_Text_Display(0, 0, 0, 0), layoutable_c(x, y, w, h) {}
+  virtual void getMinSize(int *width, int *height) const {
+    *width = 30;
+    *height = 20;
+  }
+};
+
+void mainWindow_c::cb_Tutorial(void) {
+
+  LFl_Double_Window win(true);
+  win.label("Tutorial");
+
+  layouter_c *body = new layouter_c(0, 0, 1, 1);
+  body->pitch(16);
+  body->weight(1, 1);
+
+  Fl_Text_Buffer buf;
+  buf.text(tutorialText);
+
+  LFl_Text_Display *txt = new LFl_Text_Display(0, 0, 1, 1);
+  txt->buffer(&buf);
+  txt->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
+  txt->textfont(FL_HELVETICA);
+  txt->textsize(14);
+  txt->box(FL_FLAT_BOX);
+  txt->color(FL_BACKGROUND_COLOR);
+  txt->weight(1, 1);
+  txt->setMinimumSize(720, 520);
+  body->end();
+
+  layouter_c *btns = new layouter_c(0, 1, 1, 1);
+  btns->pitch(8);
+  (new LFl_Box(0, 0))->weight(1, 0);
+  (new LFl_Button("Close", 1, 0, 1, 1))->callback(cb_TutorialClose_stub, &win);
+  (new LFl_Box(2, 0))->weight(1, 0);
+  btns->end();
+
+  win.show();
+  txt->scroll(0, 0);
+  while (win.visible())
+    Fl::wait();
+  txt->buffer(0);
 }
 
 void mainWindow_c::StatPieceInfo(unsigned int pc) {
@@ -2091,6 +2389,12 @@ void mainWindow_c::ReplacePuzzle(puzzle_c * NewPuzzle) {
     puzzle = NewPuzzle;
   }
 
+  notesInput->value(puzzle->getComment().c_str());
+  setNotesButtonsEnabled(false);
+
+  if (detailsPanel && detailsPanel->visible())
+    detailsPanel->populate(puzzle);
+
   guiGridType_c * nggt = new guiGridType_c(puzzle->getGridType());
 
   // now replace all gridtype dependent gui elements with
@@ -2118,23 +2422,35 @@ void mainWindow_c::ReplacePuzzle(puzzle_c * NewPuzzle) {
 Fl_Menu_Item mainWindow_c::menu_MainMenu[] = {
   { "&File",           0, 0, 0, FL_SUBMENU },
     {"New",            0, cb_New_stub,         0, 0, 0, 0, 14, 56},
-    {"Load",    FL_F + 3, cb_Load_stub,        0, 0, 0, 0, 14, 56},
-    {"Import",         0, cb_Load_Ps3d_stub,   0, 0, 0, 0, 14, 56},
+    {"Open",    FL_F + 3, cb_Load_stub,        0, 0, 0, 0, 14, 56},
     {"Save",    FL_F + 2, cb_Save_stub,        0, 0, 0, 0, 14, 56},
     {"Save As",        0, cb_SaveAs_stub,      0, FL_MENU_DIVIDER, 0, 0, 14, 56},
-    {"Convert",        0, cb_Convert_stub,     0, 0, 0, 0, 14, 56},
-    {"Import Assms",   0, cb_AssembliesToShapes_stub,     0, 0, 0, 0, 14, 56},
+    {"Import",         0, 0,                   0, FL_SUBMENU, 0, 0, 14, 56},
+      {"PuzzleSolver3D",       0, cb_Load_Ps3d_stub,   0, 0, 0, 0, 14, 56},
+      {"Puzzlecad (OpenSCAD)", 0, cb_Load_Scad_stub,   0, 0, 0, 0, 14, 56},
+      { 0 },
+    {"Export",         0, 0,                   0, FL_SUBMENU, 0, 0, 14, 56},
+      {"Puzzlecad (OpenSCAD)", 0, cb_Export_Scad_stub, 0, 0, 0, 0, 14, 56},
+      {"Images",             0, cb_ImageExport_stub, 0, 0, 0, 0, 14, 56},
+      {"Vector Image",       0, cb_ImageExportVector_stub, 0, 0, 0, 0, 14, 56},
+      {"STL",             0, cb_STLExport_stub, 0, 0, 0, 0, 14, 56},
+      { 0 },
+    {"Convert",        0, 0,                   0, FL_SUBMENU, 0, 0, 14, 56},
+      {"Brick grid type to other", 0, cb_Convert_stub, 0, 0, 0, 0, 14, 56},
+      {"Assemblies to Pieces", 0, cb_AssembliesToShapes_stub, 0, 0, 0, 0, 14, 56},
+      { 0 },
     {"Quit",           0, cb_Quit_stub,        0, 0, 3, 0, 14, 56},
     { 0 },
-  {"Toggle 3D", FL_F + 4, cb_Toggle3D_stub,    0, 0, 0, 0, 14, 56},
-  { "&Export",         0, 0, 0, FL_SUBMENU },
-    {"Images",             0, cb_ImageExport_stub, 0, 0, 0, 0, 14, 56},
-    {"Vector Image",       0, cb_ImageExportVector_stub, 0, 0, 0, 0, 14, 56},
-    {"STL",             0, cb_STLExport_stub, 0, 0, 0, 0, 14, 56},
+  {"&View",            0, 0, 0, FL_SUBMENU, 0, 0, 14, 56},
+    {"Notes",          0, cb_ShowNotes_stub,   0, FL_MENU_DIVIDER, 0, 0, 14, 56},
+    {"Toggle 3D", FL_F + 4, cb_Toggle3D_stub,  0, FL_MENU_DIVIDER, 0, 0, 14, 56},
+    {"Display normally with shape color", 0, cb_ViewMode0_stub, 0, FL_MENU_RADIO | FL_MENU_VALUE, 0, 0, 14, 56},
+    {"Display with colour constraint colors", 0, cb_ViewMode1_stub, 0, FL_MENU_RADIO, 0, 0, 14, 56},
+    {"Display in anaglyph mode", 0, cb_ViewMode2_stub, 0, FL_MENU_RADIO, 0, 0, 14, 56},
+    {"Display in anaglyph mode with glasses swapped", 0, cb_ViewMode3_stub, 0, FL_MENU_RADIO, 0, 0, 14, 56},
     { 0 },
-  {"Status",           0, cb_StatusWindow_stub,  0, 0, 0, 0, 14, 56},
-  {"Edit Comment",     0, cb_Comment_stub,     0, 0, 0, 0, 14, 56},
-  {"Config",           0, cb_Config_stub,      0, 0, 0, 0, 14, 56},
+  {"Settings",         0, cb_Config_stub,      0, 0, 0, 0, 14, 56},
+  {"Tutorial",         0, cb_Tutorial_stub,    0, 0, 0, 0, 14, 56},
   {"About",            0, cb_About_stub,       0, 0, 3, 0, 14, 56},
   {0}
 };
@@ -2345,24 +2661,55 @@ const char * timeToString(float time) {
   return tmp;
 }
 
-static bool computeTimeLeftEstimate(float finished, unsigned long ut, const solveThread_c * thread, float & remaining)
+static bool computeTimeLeftEstimate(float finished, unsigned long ut, const solveThread_c * thread,
+                                    unsigned long assembliesFound, float & remaining)
 {
-  /* Time left is extrapolated from assembly progress only. */
-  if (finished <= 0.0001f || finished >= 0.999f)
+  const bool haveAsmFrac = (finished > 0.0001f && finished < 0.999f);
+  float asmRemain = -1.0f;
+  if (haveAsmFrac)
+    asmRemain = ut / finished - ut;
+  else if (finished >= 0.999f)
+    asmRemain = 0.0f;
+
+  const bool disasmOn = thread && thread->disassemblyEnabled();
+  unsigned int pending = disasmOn ? thread->getDisassemblyPending() : 0;
+  float avgDisasm = disasmOn ? thread->getAverageDisassemblySeconds() : 0.0f;
+
+  float futureAsm = -1.0f;
+  if (haveAsmFrac && assembliesFound > 0)
+    futureAsm = (float)assembliesFound * (1.0f - finished) / finished;
+  else if (finished >= 0.999f)
+    futureAsm = 0.0f;
+
+  float disasmRemain = -1.0f;
+  if (avgDisasm > 0.0f && futureAsm >= 0.0f)
+    disasmRemain = avgDisasm * ((float)pending + futureAsm);
+
+  if (!disasmOn || (pending == 0 && futureAsm <= 0.0f && haveAsmFrac)) {
+    /* Assembly-only: original extrapolation from getFinished(). */
+    if (asmRemain < 1.0f)
+      return false;
+    remaining = asmRemain;
+    return true;
+  }
+
+  /* Assembly and disassembly run in parallel. Remaining wall time is the
+   * slower of: finishing the assembly search, and draining current plus
+   * expected future disassemblies at the measured average duration. */
+  float combined = -1.0f;
+  if (asmRemain >= 0.0f && disasmRemain >= 0.0f)
+    combined = (asmRemain > disasmRemain) ? asmRemain : disasmRemain;
+  else if (disasmRemain >= 0.0f)
+    combined = disasmRemain;
+  else if (asmRemain >= 1.0f)
+    combined = asmRemain;
+  else
     return false;
 
-  remaining = ut/finished - ut;
-
-  /* Avoid showing "0 seconds" while work is still in progress. */
-  if (remaining < 1.0f)
+  if (combined < 1.0f)
     return false;
 
-  /* Disassembly (including Check Rotations) runs asynchronously and is not
-   * included in getFinished(); near the end of assembly the backlog makes the
-   * assembly-only estimate unreliable. */
-  if (thread && thread->disassemblyEnabled() && thread->getDisassemblyPending() > 0 && finished >= 0.9f)
-    return false;
-
+  remaining = combined;
   return true;
 }
 
@@ -2378,6 +2725,33 @@ int mainWindow_c::findMenuEntry(const char * txt) {
 
   bt_assert(found >= 0);
   return found;
+}
+
+void mainWindow_c::initViewMenuIcons(void) {
+
+  static pixmapList_c pm;
+  static Fl_Multi_Label ml[4];
+  static const char * names[4] = {
+    "Display normally with shape color",
+    "Display with colour constraint colors",
+    "Display in anaglyph mode",
+    "Display in anaglyph mode with glasses swapped"
+  };
+  static const char ** xpms[4] = {
+    ViewModeNormal_xpm,
+    ViewModeColor_xpm,
+    ViewMode3D_xpm,
+    ViewMode3DL_xpm
+  };
+
+  for (int i = 0; i < 4; i++) {
+    viewModeMenuIdx[i] = mainWindow_c::findMenuEntry(names[i]);
+    ml[i].typea = FL_IMAGE_LABEL;
+    ml[i].labela = (const char *)pm.get(xpms[i]);
+    ml[i].typeb = FL_NORMAL_LABEL;
+    ml[i].labelb = names[i];
+    menu_MainMenu[viewModeMenuIdx[i]].multi_label(&ml[i]);
+  }
 }
 
 void mainWindow_c::updateInterface(void) {
@@ -2851,7 +3225,10 @@ void mainWindow_c::updateInterface(void) {
       TimeUsed->value(timeToString(ut));
       {
         float remaining;
-        if (computeTimeLeftEstimate(finished, ut, assmThread, remaining))
+        unsigned long nAsm = 0;
+        if (pr->numAssembliesKnown())
+          nAsm = pr->getNumAssemblies();
+        if (computeTimeLeftEstimate(finished, ut, assmThread, nAsm, remaining))
           TimeEst->value(timeToString(remaining));
         else
           TimeEst->value("unknown");
@@ -3219,11 +3596,13 @@ int mainWindow_c::handle(int event) {
 }
 
 #define SZ_GAP 5                               // gap between elements
+#define MAIN_TAB_LABELSIZE 16                  // slightly larger than FLTK default 14
 
 void mainWindow_c::CreateShapeTab(void) {
 
   TabPieces = new layouter_c();
-  TabPieces->label("Entities");
+  TabPieces->label("  Entities  ");
+  TabPieces->labelsize(MAIN_TAB_LABELSIZE);
   TabPieces->tooltip("Edit shapes");
   TabPieces->clear_visible_focus();
 
@@ -3249,25 +3628,39 @@ void mainWindow_c::CreateShapeTab(void) {
     (new LFl_Box(5, 0))->setMinimumSize(SZ_GAP, 0);
     BtnRenShape =   new LFlatButton_c(6, 0, 1, 1, "Label", " Give the selected shape a name ", cb_NameShape_stub, this);
     ((LFlatButton_c*)BtnRenShape)->weight(1, 0);
-    (new LFl_Box(7, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnWeightInc =  new LFlatButton_c(8, 0, 1, 1, "W+", " Increase Weight of the selected shape ",cb_WeightInc_stub, this);
-    (new LFl_Box(9, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnWeightDec =  new LFlatButton_c(10, 0, 1, 1, "W-", " Decrease Weight of the selected shape ",cb_WeightDec_stub, this);
-    (new LFl_Box(11, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnShapeLeft =  new LFlatButton_c(12, 0, 1, 1, "@-14->", " Exchange current shape with previous shape ", cb_ShapeLeft_stub, this);
-    (new LFl_Box(13, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnShapeRight = new LFlatButton_c(14, 0, 1, 1, "@-16->", " Exchange current shape with next shape ", cb_ShapeRight_stub, this);
 
     o->end();
 
     (new LFl_Box(0, 2))->setMinimumSize(0, SZ_GAP);
 
+    o = new layouter_c(0, 3);
+
+    BtnWeightInc =  new LFlatButton_c(0, 0, 1, 1, "W+", " Increase Weight of the selected shape ",cb_WeightInc_stub, this);
+    ((LFlatButton_c*)BtnWeightInc)->weight(1, 0);
+    (new LFl_Box(1, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnWeightDec =  new LFlatButton_c(2, 0, 1, 1, "W-", " Decrease Weight of the selected shape ",cb_WeightDec_stub, this);
+    ((LFlatButton_c*)BtnWeightDec)->weight(1, 0);
+    (new LFl_Box(3, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnShapeLeft =  new LFlatButton_c(4, 0, 1, 1, "@-14->", " Exchange current shape with previous shape ", cb_ShapeLeft_stub, this);
+    ((LFlatButton_c*)BtnShapeLeft)->weight(1, 0);
+    (new LFl_Box(5, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnShapeRight = new LFlatButton_c(6, 0, 1, 1, "@-16->", " Exchange current shape with next shape ", cb_ShapeRight_stub, this);
+    ((LFlatButton_c*)BtnShapeRight)->weight(1, 0);
+    (new LFl_Box(7, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnDetails = new LFlatButton_c(8, 0, 1, 1, "Details", " Show shape details ", cb_StatusWindow_stub, this);
+    ((LFlatButton_c*)BtnDetails)->weight(1, 0);
+
+    o->end();
+
+    (new LFl_Box(0, 4))->setMinimumSize(0, SZ_GAP);
+
     PcSel = new PieceSelector(0, 0, 200, 200, puzzle);
-    LBlockListGroup_c * selGroup = new LBlockListGroup_c(0, 3, 1, 1, PcSel);
+    LBlockListGroup_c * selGroup = new LBlockListGroup_c(0, 5, 1, 1, PcSel);
     selGroup->callback(cb_PcSel_stub, this);
     selGroup->tooltip(" Select the shape that you want to edit ");
     selGroup->weight(1, 1);
 
+    group->weight(0, 1);
     group->end();
   }
 
@@ -3361,6 +3754,7 @@ void mainWindow_c::CreateShapeTab(void) {
     pieceEdit->editType(gridEditor_c::EDT_RUBBER);
     pieceEdit->weight(0, 1);
 
+    group->weight(0, 1);
     group->end();
   }
 
@@ -3368,7 +3762,7 @@ void mainWindow_c::CreateShapeTab(void) {
     layouter_c * group = new layouter_c(0, 2);
     group->box(FL_FLAT_BOX);
 
-    new LSeparator_c(0, 0, 1, 1, "Colours", true);
+    new LSeparator_c(0, 0, 1, 1, "Colors", true);
 
     layouter_c * o = new layouter_c(0, 1);
 
@@ -3390,7 +3784,9 @@ void mainWindow_c::CreateShapeTab(void) {
     colGroup->callback(cb_ColSel_stub, this);
     colGroup->tooltip(" Select colour to use for all editing operations ");
     colGroup->weight(1, 1);
+    colGroup->setMinimumSize(30, 48);
 
+    group->weight(0, 0);
     group->end();
   }
 
@@ -3405,7 +3801,8 @@ void mainWindow_c::CreateShapeTab(void) {
 void mainWindow_c::CreateProblemTab(void) {
 
   TabProblems = new layouter_c();
-  TabProblems->label("Puzzle");
+  TabProblems->label("  Puzzle  ");
+  TabProblems->labelsize(MAIN_TAB_LABELSIZE);
   TabProblems->tooltip("Edit problems");
   TabProblems->hide();
   TabProblems->clear_visible_focus();
@@ -3505,7 +3902,7 @@ void mainWindow_c::CreateProblemTab(void) {
     BtnRemAll = new LFlatButton_c(xp++, 0, 1, 1, "Clr", " Remove all pieces ", cb_RemoveAllShapesFromProblem_stub, this);
     ((LFlatButton_c*)BtnRemAll)->weight(1, 0);
     (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnGroup =    new LFlatButton_c(xp++, 0, 1, 1, "Detail", " Edit details of the problem ", cb_ShapeGroup_stub, this);
+    BtnGroup =    new LFlatButton_c(xp++, 0, 1, 1, "Groups", " Edit groups of the problem ", cb_ShapeGroup_stub, this);
     ((LFlatButton_c*)BtnGroup)->weight(1, 0);
     (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
     BtnProbShapeLeft = new LFlatButton_c(xp++, 0, 1, 1, "@-14->", " Exchange current shape with previous shape ", cb_ProbShapeLeft_stub, this);
@@ -3579,7 +3976,8 @@ void mainWindow_c::CreateProblemTab(void) {
 void mainWindow_c::CreateSolveTab(void) {
 
   TabSolve = new layouter_c();
-  TabSolve->label("Solver");
+  TabSolve->label("  Solver  ");
+  TabSolve->labelsize(MAIN_TAB_LABELSIZE);
   TabSolve->tooltip("Solve problems");
   TabSolve->hide();
   TabSolve->clear_visible_focus();
@@ -3642,10 +4040,12 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o = new layouter_c(0, 2);
 
-    new LFl_Box("Sort by: ", 0, 0, 1, 1);
+    LFl_Box * sortByLabel = new LFl_Box("Sort by: ", 0, 0, 1, 1);
+    sortByLabel->tooltip(" Set before solving to modify the sorting order of results found. Level = steps to remove the first piece. ");
 
     sortMethod = new LFl_Choice(1, 0, 1, 1);
     ((LFl_Choice*)sortMethod)->weight(1, 0);
+    sortMethod->tooltip(" Set before solving to modify the sorting order of results found. Level = steps to remove the first piece. ");
 
     // be careful the order in here must correspond with the enumeration in assembler thread
     sortMethod->add("Unsorted");
@@ -3662,20 +4062,24 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o = new layouter_c(0, 4);
 
-    new LFl_Box("Display Limit:", 0, 0, 1, 1);
+    LFl_Box * dispLimitLabel = new LFl_Box("Display Limit:", 0, 0, 1, 1);
+    dispLimitLabel->tooltip(" Limit the number of solutions to keep the disassembly animation for ");
     solLimit = new LFl_Value_Input(1, 0, 1, 1);
     solLimit->bounds(1, 100000000);
     solLimit->step(1, 1);
     solLimit->value(100);
+    solLimit->tooltip(" Limit the number of solutions to keep the disassembly animation for ");
     ((LFl_Value_Input*)solLimit)->setMinimumSize(48, 0);
 
     (new LFl_Box(2, 0))->setMinimumSize(SZ_GAP, 0);
 
-    new LFl_Box("Keep Each: ", 3, 0, 1, 1);
+    LFl_Box * keepEachLabel = new LFl_Box("Keep Each: ", 3, 0, 1, 1);
+    keepEachLabel->tooltip(" If some solutions should be dropped. 1 to keep all, higher numbers to skip that number before the next solution is kept. Used to keep a smaller sample of a large number of solutions. ");
     solDrop = new LFl_Value_Input(4, 0, 1, 1);
     solDrop->bounds(1, 100000000);
     solDrop->step(1, 1);
     solDrop->value(1);
+    solDrop->tooltip(" If some solutions should be dropped. 1 to keep all, higher numbers to skip that number before the next solution is kept. Used to keep a smaller sample of a large number of solutions. ");
     ((LFl_Value_Input*)solDrop)->setMinimumSize(48, 0);
 
     o->end();
@@ -3763,7 +4167,7 @@ void mainWindow_c::CreateSolveTab(void) {
     (new LFl_Box("Time left: ", 2, 2, 1, 1))->stretchRight();
     TimeEst = new LFl_Output(3, 2, 1, 1);
     TimeEst->box(FL_NO_BOX);
-    TimeEst->tooltip(" This is a very approximate estimate and can be totally wrong, to take with a grain of salt ");
+    TimeEst->tooltip(" Approximate remaining time. With Check Rotations this also uses the average time per disassembly. Can still be far off. ");
 
     o->end();
 
@@ -3949,6 +4353,10 @@ mainWindow_c::mainWindow_c(gridType_c * gt) : LFl_Double_Window(true) {
   disassemble = 0;
   editSymmetries = 0;
   expertMode = true;
+  view3DStack = 0;
+  detailsPanel = 0;
+  notesUpdate = 0;
+  notesRevert = 0;
 
   puzzle = new puzzle_c(gt);
   ggt = new guiGridType_c(puzzle->getGridType());
@@ -3957,22 +4365,67 @@ mainWindow_c::mainWindow_c(gridType_c * gt) : LFl_Double_Window(true) {
   label("BurrTools - unknown");
   user_data((void*)(this));
 
-  MainMenu = new LFl_Menu_Bar(0, 0, 1, 1);
-  MainMenu->copy(menu_MainMenu, this);
+  /* original comment dialog is 400x200; its text box is the window
+   * minus gaps and the button row. The notes panel uses that width and
+   * twice that text-box height.
+   */
+  static const int NOTES_WIDTH = 400;
+  static const int NOTES_TEXT_HEIGHT = 2 * (200 - 4 * 5 - 20);
+
+  layouter_c * menuRow = new layouter_c(0, 0, 1, 1);
+
+  LFl_Menu_Bar * menuBar = new LFl_Menu_Bar(0, 0, 1, 1);
+  MainMenu = menuBar;
+  initViewMenuIcons();
+  menuBar->copy(menu_MainMenu, this);
+  menuBar->weight(1, 0);
+
+  notesToggle = new LFlatButton_c(1, 0, 1, 1, "Show Notes",
+                                  " Show or hide the puzzle notes panel ",
+                                  cb_ToggleNotes_stub, this);
+  notesToggle->box(FL_FLAT_BOX);
+  notesToggle->down_box(FL_FLAT_BOX);
+  notesToggle->labelsize(14);
+  {
+    int tw = 0, th = 0;
+    fl_font(notesToggle->labelfont(), notesToggle->labelsize());
+    fl_measure("Hide Notes", tw, th);
+    notesToggle->setMinimumSize(tw + 16, 25);
+  }
+
+  menuRow->end();
 
   StatusLine = new LStatusLine(0, 2, 1, 1);
-  StatusLine->callback(cb_Status_stub, this);
 
-  LFl_Tile * mainTile = new LFl_Tile(0, 1, 1, 1);
-  mainTile->weight(0, 1);
+  layouter_c * contentRow = new layouter_c(0, 1, 1, 1);
+  contentRow->weight(0, 1);
+  contentRow->clip_children(1);
 
-  layouter_c * lay = new layouter_c(1, 0, 1, 1);
+  LFl_Tile * mainTile = new LFl_Tile(0, 0, 1, 1);
+  mainTile->weight(1, 1);
+
+  static const int VIEW3D_MIN = 400;
+  static const int VIEW3D_SHRINK_MIN = VIEW3D_MIN * 3 / 10;
+
+  view3DStack = new layouter_c(1, 0, 1, 1);
+  view3DStack->weight(1, 0);
+  view3DStack->setMinimumSize(VIEW3D_MIN, VIEW3D_MIN);
+  view3DStack->setShrinkMinSize(VIEW3D_SHRINK_MIN, 0);
+  view3DStack->shrinkPrio(0, 128);
+  view3DStack->clip_children(1);
+
   View3D = new LView3dGroup(0, 0, 1, 1);
-  lay->weight(1, 0);
-  lay->end();
-  lay->setMinimumSize(400, 400);
-  View3D->weight(0, 1);
+  View3D->weight(1, 1);
   View3D->callback(cb_3dClick_stub, this);
+
+  detailsPanel = new statusWindow_c(0, 1, 1, 1);
+  detailsPanel->weight(1, 0);
+  detailsPanel->setMinimumSize(200, 220);
+  detailsPanel->setShrinkMinSize(VIEW3D_SHRINK_MIN, 0);
+  detailsPanel->setCallbacks(cb_DetailsClose_stub, cb_DetailsChanged_stub, this);
+  detailsPanel->hide();
+
+  view3DStack->end();
 
   // this box paints the background behind the tab, because the tabs are partly transparent
   (new LFl_Box(0, 0, 1, 1))->color(FL_BACKGROUND_COLOR);
@@ -3980,12 +4433,75 @@ mainWindow_c::mainWindow_c(gridType_c * gt) : LFl_Double_Window(true) {
   // the tab for the tool bar
   TaskSelectionTab = new LFl_Tabs(0, 0, 1, 1);
   TaskSelectionTab->callback(cb_TaskSelectionTab_stub, this);
+  TaskSelectionTab->labelsize(MAIN_TAB_LABELSIZE);
   TaskSelectionTab->clear_visible_focus();
 
   // the three tabs
   CreateShapeTab();
   CreateProblemTab();
   CreateSolveTab();
+
+  TaskSelectionTab->end();
+  mainTile->end();
+
+  notesPanel = new layouter_c(1, 0, 1, 1);
+  notesPanel->setMinimumSize(NOTES_WIDTH, NOTES_TEXT_HEIGHT + 30);
+  notesPanel->setShrinkMinSize(NOTES_WIDTH / 5, 0);
+  notesPanel->shrinkPrio(0, 128);
+  notesPanel->pitch(4);
+  notesPanel->weight(0, 1);
+  notesPanel->clip_children(1);
+
+  notesInput = new LFl_Multiline_Input(0, 0, 1, 1);
+  notesInput->weight(1, 1);
+  notesInput->setMinimumSize(NOTES_WIDTH, NOTES_TEXT_HEIGHT);
+  notesInput->setShrinkMinSize(NOTES_WIDTH / 5, 0);
+  notesInput->shrinkPrio(0, 128);
+  notesInput->wrap(1);
+  notesInput->value(puzzle->getComment().c_str());
+  notesInput->when(FL_WHEN_CHANGED);
+  notesInput->callback(cb_NotesChanged_stub, this);
+
+  (new LFl_Box(0, 1, 1, 1))->setMinimumSize(0, 5);
+
+  layouter_c * notesButtons = new layouter_c(0, 2, 1, 1);
+
+  {
+    int tw = 0, th = 0;
+    fl_font(FL_HELVETICA, FL_NORMAL_SIZE);
+    fl_measure("Update", tw, th);
+    int bw = 2 * (tw + 4);
+
+    LFl_Box * leftPad = new LFl_Box(0, 0);
+    leftPad->weight(1, 0);
+
+    notesUpdate = new LFl_Button("Update", 1, 0);
+    notesUpdate->callback(cb_NotesUpdate_stub, this);
+    notesUpdate->tooltip(" Save the current notes ");
+    notesUpdate->setMinimumSize(bw, th + 10);
+
+    (new LFl_Box(2, 0))->setMinimumSize(12, 0);
+
+    notesRevert = new LFl_Button("Revert", 3, 0);
+    notesRevert->callback(cb_NotesRevert_stub, this);
+    notesRevert->tooltip(" Revert notes to the last saved version ");
+    notesRevert->setMinimumSize(bw, th + 10);
+
+    LFl_Box * rightPad = new LFl_Box(4, 0);
+    rightPad->weight(1, 0);
+  }
+
+  notesButtons->end();
+  notesButtons->setShrinkMinSize(NOTES_WIDTH / 5, 0);
+  notesButtons->shrinkPrio(0, 128);
+  setNotesButtonsEnabled(false);
+
+  notesPanel->end();
+  notesPanel->hide();
+
+  contentRow->end();
+
+  setResizeMin(120, 80);
 
   currentTab = 0;
   ViewSizes[0] = -1;
