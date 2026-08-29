@@ -45,6 +45,7 @@
 #include "buttongroup.h"
 #include "constraintsgroup.h"
 #include "blocklistgroup.h"
+#include "shapehistory.h"
 #include "vectorexportwindow.h"
 #include "convertwindow.h"
 #include "assmimportwindow.h"
@@ -194,7 +195,7 @@ void mainWindow_c::cb_NewShape(void) {
   pieceEdit->setZ(0);
   updateInterface();
   StatPieceInfo(PcSel->getSelection());
-  changed = true;
+  recordShapeAction(shapeHistory_c::AK_STRUCTURAL);
 }
 
 static void cb_DeleteShape_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_DeleteShape(); }
@@ -218,7 +219,7 @@ void mainWindow_c::cb_DeleteShape(void) {
     updateInterface();
     StatPieceInfo(PcSel->getSelection());
 
-    changed = true;
+    recordShapeAction(shapeHistory_c::AK_STRUCTURAL);
 
   } else
 
@@ -234,7 +235,7 @@ void mainWindow_c::cb_CopyShape(void) {
   if (current < puzzle->getNumberOfShapes()) {
 
     PcSel->setSelection(puzzle->addShape(puzzle->getGridType()->getVoxel(puzzle->getShape(current))));
-    changed = true;
+    recordShapeAction(shapeHistory_c::AK_STRUCTURAL);
 
     updateInterface();
     StatPieceInfo(PcSel->getSelection());
@@ -254,7 +255,7 @@ void mainWindow_c::cb_NameShape(void) {
 
     if (name) {
       puzzle->getShape(PcSel->getSelection())->setName(name);
-      changed = true;
+      recordShapeAction(shapeHistory_c::AK_STRUCTURAL);
       updateInterface();
     }
   }
@@ -268,7 +269,7 @@ void mainWindow_c::cb_WeightChange(int by) {
 
     voxel_c * v = puzzle->getShape(PcSel->getSelection());
     v->setWeight(v->getWeight() + by);
-    changed = true;
+    recordShapeAction(shapeHistory_c::AK_STRUCTURAL);
     updateInterface();
   }
 }
@@ -337,7 +338,7 @@ void mainWindow_c::cb_TransformPiece(void) {
   StatPieceInfo(PcSel->getSelection());
   activateShape(PcSel->getSelection());
 
-  changed = true;
+  recordShapeAction(shapeHistory_c::AK_TRANSFORM);
 }
 
 static void cb_EditSym_stub(Fl_Widget* o, void* v) {
@@ -459,7 +460,13 @@ void mainWindow_c::cb_pieceEdit(VoxelEditGroup_c* o) {
       StatPieceInfo(PcSel->getSelection());
     }
     break;
+  case gridEditor_c::RS_STROKEBEGIN:
+    if (shapeHistory)
+      shapeHistory->beginStroke();
+    break;
   case gridEditor_c::RS_CHANGESQUARE:
+    if (shapeHistory)
+      shapeHistory->markStrokeDirty();
     View3D->getView()->showSingleShape(puzzle, PcSel->getSelection());
     if (o->getMouse())
       StatPieceInfo(PcSel->getSelection(), true, o->getCursorX(), o->getCursorY(), o->getCursorZ());
@@ -467,6 +474,12 @@ void mainWindow_c::cb_pieceEdit(VoxelEditGroup_c* o) {
       StatPieceInfo(PcSel->getSelection());
     changeShape(PcSel->getSelection());
     changed = true;
+    break;
+  case gridEditor_c::RS_STROKEEND:
+    if (shapeHistory && shapeHistory->endStroke(puzzle, PcSel->getSelection())) {
+      changed = true;
+      updateUndoRedoButtons();
+    }
     break;
   }
 
@@ -567,8 +580,9 @@ void mainWindow_c::cb_ShapeExchange(int with) {
 
   if ((current < puzzle->getNumberOfShapes()) && (other < puzzle->getNumberOfShapes())) {
     puzzle->exchangeShapes(current, other);
-    changed = true;
     PcSel->setSelection(other);
+    recordShapeAction(shapeHistory_c::AK_STRUCTURAL);
+    updateInterface();
   }
 }
 
@@ -1393,14 +1407,15 @@ void mainWindow_c::cb_3dClick(void) {
 
       if (View3D->getView()->pickShape(Fl::event_x(),
             View3D->getView()->h()-Fl::event_y(),
-            &shape, &voxel, &face))
+            &shape, &voxel, &face)) {
         sh->setState(voxel, voxel_c::VX_EMPTY);
 
-      View3D->getView()->showSingleShape(puzzle, PcSel->getSelection());
-      StatPieceInfo(PcSel->getSelection());
-      changeShape(PcSel->getSelection());
-      redraw();
-      changed = true;
+        View3D->getView()->showSingleShape(puzzle, PcSel->getSelection());
+        StatPieceInfo(PcSel->getSelection());
+        changeShape(PcSel->getSelection());
+        redraw();
+        recordShapeAction(shapeHistory_c::AK_CLICK_3D);
+      }
 
     } else if (Fl::event_shift() || Fl::event_alt()) {
 
@@ -1434,7 +1449,7 @@ void mainWindow_c::cb_3dClick(void) {
             changeShape(PcSel->getSelection());
             activateShape(PcSel->getSelection());
             redraw();
-            changed = true;
+            recordShapeAction(shapeHistory_c::AK_CLICK_3D);
           }
         }
       }
@@ -1638,8 +1653,11 @@ void mainWindow_c::cb_Save(void) {
 
       if (!ostr)
         fl_alert("puzzle NOT saved!!");
-      else
+      else {
         changed = false;
+        if (shapeHistory)
+          shapeHistory->markSaved();
+      }
     }
   }
 }
@@ -1823,8 +1841,11 @@ void mainWindow_c::cb_SaveAs(void) {
 
         if (!ostr)
           fl_alert("puzzle NOT saved!!!");
-        else
+        else {
           changed = false;
+          if (shapeHistory)
+            shapeHistory->markSaved();
+        }
 
         if (fname) delete [] fname;
         fname = new char[strlen(f2)+1];
@@ -2284,6 +2305,81 @@ void mainWindow_c::changeShape(unsigned int nr) {
       puzzle->getProblem(i)->removeAllSolutions();
 }
 
+void mainWindow_c::updateUndoRedoButtons(void) {
+  if (!shapeHistory)
+    return;
+
+  bool canU = shapeHistory->canUndo() && !assmThread;
+  bool canR = shapeHistory->canRedo() && !assmThread;
+
+  if (BtnUndo) {
+    if (canU) BtnUndo->activate();
+    else BtnUndo->deactivate();
+  }
+  if (BtnRedo) {
+    if (canR) BtnRedo->activate();
+    else BtnRedo->deactivate();
+  }
+
+  if (canU) menu_MainMenu[findMenuEntry("Undo")].activate();
+  else menu_MainMenu[findMenuEntry("Undo")].deactivate();
+  if (canR) menu_MainMenu[findMenuEntry("Redo")].activate();
+  else menu_MainMenu[findMenuEntry("Redo")].deactivate();
+
+  if (MainMenu) {
+    const Fl_Menu_Item * mu = MainMenu->find_item("Undo");
+    const Fl_Menu_Item * mr = MainMenu->find_item("Redo");
+    if (mu) {
+      if (canU) const_cast<Fl_Menu_Item*>(mu)->activate();
+      else const_cast<Fl_Menu_Item*>(mu)->deactivate();
+    }
+    if (mr) {
+      if (canR) const_cast<Fl_Menu_Item*>(mr)->activate();
+      else const_cast<Fl_Menu_Item*>(mr)->deactivate();
+    }
+  }
+}
+
+void mainWindow_c::recordShapeAction(int kind) {
+  if (shapeHistory)
+    shapeHistory->record(puzzle, (shapeHistory_c::actionKind_e)kind, PcSel->getSelection());
+  changed = true;
+  updateUndoRedoButtons();
+}
+
+void mainWindow_c::applyHistoryRestore(unsigned int selected) {
+  unsigned int n = puzzle->getNumberOfShapes();
+  if (selected >= n)
+    selected = n ? n - 1 : (unsigned int)-1;
+
+  if (selected < n)
+    activateShape(selected);
+  else
+    activateClear();
+
+  PcSel->setSelection(selected);
+  changed = shapeHistory ? shapeHistory->isModifiedFromSave() : true;
+  if (detailsPanel && detailsPanel->visible())
+    detailsPanel->populate(puzzle);
+  updateInterface();
+  StatPieceInfo(PcSel->getSelection());
+  redraw();
+}
+
+static void cb_Undo_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Undo(); }
+void mainWindow_c::cb_Undo(void) {
+  if (!shapeHistory || !shapeHistory->canUndo() || assmThread)
+    return;
+  applyHistoryRestore(shapeHistory->undo(puzzle));
+}
+
+static void cb_Redo_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Redo(); }
+void mainWindow_c::cb_Redo(void) {
+  if (!shapeHistory || !shapeHistory->canRedo() || assmThread)
+    return;
+  applyHistoryRestore(shapeHistory->redo(puzzle));
+}
+
 void mainWindow_c::changeProblem(unsigned int nr) {
   puzzle->getProblem(nr)->removeAllSolutions();
 }
@@ -2389,6 +2485,9 @@ void mainWindow_c::ReplacePuzzle(puzzle_c * NewPuzzle) {
     puzzle = NewPuzzle;
   }
 
+  if (shapeHistory)
+    shapeHistory->reset(puzzle);
+
   notesInput->value(puzzle->getComment().c_str());
   setNotesButtonsEnabled(false);
 
@@ -2435,15 +2534,15 @@ Fl_Menu_Item mainWindow_c::menu_MainMenu[] = {
       {"Vector Image",       0, cb_ImageExportVector_stub, 0, 0, 0, 0, 14, 56},
       {"STL",             0, cb_STLExport_stub, 0, 0, 0, 0, 14, 56},
       { 0 },
-    {"Convert",        0, 0,                   0, FL_SUBMENU, 0, 0, 14, 56},
-      {"Brick grid type to other", 0, cb_Convert_stub, 0, 0, 0, 0, 14, 56},
-      {"Assemblies to Pieces", 0, cb_AssembliesToShapes_stub, 0, 0, 0, 0, 14, 56},
-      { 0 },
     {"Quit",           0, cb_Quit_stub,        0, 0, 3, 0, 14, 56},
     { 0 },
-  {"&View",            0, 0, 0, FL_SUBMENU, 0, 0, 14, 56},
-    {"Notes",          0, cb_ShowNotes_stub,   0, FL_MENU_DIVIDER, 0, 0, 14, 56},
-    {"Toggle 3D", FL_F + 4, cb_Toggle3D_stub,  0, FL_MENU_DIVIDER, 0, 0, 14, 56},
+  {"&Edit",            0, 0, 0, FL_SUBMENU, 0, 0, 14, 56},
+    {"Undo",    FL_COMMAND+'z', cb_Undo_stub,  0, FL_MENU_INACTIVE, 0, 0, 14, 56},
+    {"Redo",    FL_COMMAND+FL_SHIFT+'z', cb_Redo_stub, 0, FL_MENU_INACTIVE, 0, 0, 14, 56},
+    {"Notes",          0, cb_ShowNotes_stub,   0, 0, 0, 0, 14, 56},
+    {"Toggle 3D", FL_F + 4, cb_Toggle3D_stub,  0, 0, 0, 0, 14, 56},
+    {"Convert brick grid type to other", 0, cb_Convert_stub, 0, 0, 0, 0, 14, 56},
+    {"Convert assemblies to pieces", 0, cb_AssembliesToShapes_stub, 0, FL_MENU_DIVIDER, 0, 0, 14, 56},
     {"Display normally with shape color", 0, cb_ViewMode0_stub, 0, FL_MENU_RADIO | FL_MENU_VALUE, 0, 0, 14, 56},
     {"Display with colour constraint colors", 0, cb_ViewMode1_stub, 0, FL_MENU_RADIO, 0, 0, 14, 56},
     {"Display in anaglyph mode", 0, cb_ViewMode2_stub, 0, FL_MENU_RADIO, 0, 0, 14, 56},
@@ -2770,6 +2869,8 @@ void mainWindow_c::updateInterface(void) {
   else
     menu_MainMenu[findMenuEntry("STL")].deactivate();
 
+  updateUndoRedoButtons();
+
   MainMenu->copy(menu_MainMenu, this);
 
   unsigned int prob = solutionProblem->getSelection();
@@ -2818,6 +2919,8 @@ void mainWindow_c::updateInterface(void) {
     } else {
       BtnDelShape->deactivate();
     }
+
+    updateUndoRedoButtons();
 
     const problem_c * pr = (assmThread) ? &assmThread->getProblem() : 0;
 
@@ -3542,8 +3645,26 @@ void mainWindow_c::Small3DView(void) {
 
 int mainWindow_c::handle(int event) {
 
+  if (event == FL_SHORTCUT && notesInput && Fl::focus() == notesInput) {
+    unsigned mods = Fl::event_state();
+    int k = Fl::event_key();
+    if ((mods & FL_COMMAND) && (k == 'z' || k == 'Z' || k == 'y' || k == 'Y'))
+      return notesInput->handle(event);
+  }
+
   if (Fl_Double_Window::handle(event))
     return 1;
+
+  if (event == FL_SHORTCUT) {
+    unsigned mods = Fl::event_state();
+    if ((mods & FL_COMMAND) && !(mods & FL_ALT) && !(mods & FL_SHIFT)) {
+      int k = Fl::event_key();
+      if (k == 'y' || k == 'Y') {
+        cb_Redo();
+        return 1;
+      }
+    }
+  }
 
   switch(event) {
   case FL_SHORTCUT:
@@ -3628,6 +3749,16 @@ void mainWindow_c::CreateShapeTab(void) {
     (new LFl_Box(5, 0))->setMinimumSize(SZ_GAP, 0);
     BtnRenShape =   new LFlatButton_c(6, 0, 1, 1, "Label", " Give the selected shape a name ", cb_NameShape_stub, this);
     ((LFlatButton_c*)BtnRenShape)->weight(1, 0);
+    (new LFl_Box(7, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnUndo =       new LFlatButton_c(8, 0, 1, 1, "Undo",
+#ifdef __APPLE__
+                                      " Undo the last shape change Cmd+Z ",
+#else
+                                      " Undo the last shape change Ctrl+Z ",
+#endif
+                                      cb_Undo_stub, this);
+    ((LFlatButton_c*)BtnUndo)->weight(1, 0);
+    BtnUndo->deactivate();
 
     o->end();
 
@@ -3649,6 +3780,16 @@ void mainWindow_c::CreateShapeTab(void) {
     (new LFl_Box(7, 0))->setMinimumSize(SZ_GAP, 0);
     BtnDetails = new LFlatButton_c(8, 0, 1, 1, "Details", " Show shape details ", cb_StatusWindow_stub, this);
     ((LFlatButton_c*)BtnDetails)->weight(1, 0);
+    (new LFl_Box(9, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnRedo =    new LFlatButton_c(10, 0, 1, 1, "Redo",
+#ifdef __APPLE__
+                                   " Redo the last undone shape change Cmd+Shift+Z ",
+#else
+                                   " Redo the last undone shape change Ctrl+Shift+Z ",
+#endif
+                                   cb_Redo_stub, this);
+    ((LFlatButton_c*)BtnRedo)->weight(1, 0);
+    BtnRedo->deactivate();
 
     o->end();
 
@@ -4359,8 +4500,12 @@ mainWindow_c::mainWindow_c(gridType_c * gt) : LFl_Double_Window(true) {
   notesRevert = 0;
 
   puzzle = new puzzle_c(gt);
+  shapeHistory = new shapeHistory_c();
+  shapeHistory->reset(puzzle);
   ggt = new guiGridType_c(puzzle->getGridType());
   changed = false;
+  BtnUndo = 0;
+  BtnRedo = 0;
 
   label("BurrTools - unknown");
   user_data((void*)(this));
@@ -4537,6 +4682,7 @@ mainWindow_c::~mainWindow_c() {
   }
 
   delete puzzle;
+  delete shapeHistory;
 
   if (fname) {
     delete [] fname;

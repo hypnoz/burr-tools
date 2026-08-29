@@ -152,6 +152,13 @@ public:
    *  updating those indices
    */
   void exchangeShapes(unsigned int s1, unsigned int s2);
+  /**
+   * Replace the shape list with the given voxel spaces.
+   * Previous shapes are deleted. Ownership of the pointers in
+   * newShapes is taken over. Problem indices are NOT updated;
+   * the caller must restore problem shape assignments afterwards.
+   */
+  void adoptShapes(const std::vector<voxel_c*> & newShapes);
   //@}
 
 

@@ -53,6 +53,7 @@ class LFl_Multiline_Input;
 class LFl_Button;
 class statusWindow_c;
 
+class shapeHistory_c;
 class Fl_Tabs;
 class Fl_Group;
 class Fl_Check_Button;
@@ -67,6 +68,7 @@ class Fl_Progress;
 class mainWindow_c : public LFl_Double_Window {
 
   puzzle_c * puzzle;
+  shapeHistory_c * shapeHistory;
   guiGridType_c * ggt;  // this is the guigridtype for the puzzle, is must always be in sync
   char * fname;
   disasmToMoves_c * disassemble;
@@ -103,7 +105,7 @@ class mainWindow_c : public LFl_Double_Window {
   Fl_Check_Button *SolveDisasm, *CheckRotations, *DebugRotations, *JustCount, *DropDisassemblies, *KeepMirrors, *KeepRotations, *CompleteRotations;
 
   FlatButton *BtnPrepare, *BtnStart, *BtnCont, *BtnStop, *BtnPlacement, *BtnStep, *BtnMovement;
-  FlatButton *BtnNewShape, *BtnDelShape, *BtnCpyShape, *BtnRenShape, *BtnShapeLeft, *BtnShapeRight, *BtnWeightInc, *BtnWeightDec, *BtnDetails;
+  FlatButton *BtnNewShape, *BtnDelShape, *BtnCpyShape, *BtnRenShape, *BtnUndo, *BtnRedo, *BtnShapeLeft, *BtnShapeRight, *BtnWeightInc, *BtnWeightDec, *BtnDetails;
   FlatButton *BtnNewColor, *BtnDelColor, *BtnChnColor;
   FlatButton *BtnNewProb, *BtnDelProb, *BtnCpyProb, *BtnRenProb, *BtnProbLeft, *BtnProbRight;
   FlatButton *BtnColSrtPc, *BtnColSrtRes, *BtnColAdd, *BtnColRem;
@@ -186,6 +188,9 @@ class mainWindow_c : public LFl_Double_Window {
   bool threadStopped(void);
 
   void updateInterface(void);
+  void updateUndoRedoButtons(void);
+  void recordShapeAction(int kind);
+  void applyHistoryRestore(unsigned int selected);
 
 public:
 
@@ -224,6 +229,8 @@ public:
   void cb_NameShape(void);
   void cb_ShapeExchange(int with);
   void cb_WeightChange(int by);
+  void cb_Undo(void);
+  void cb_Redo(void);
 
   void cb_NewProblem(void);
   void cb_DeleteProblem(void);
