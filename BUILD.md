@@ -2,6 +2,12 @@
 
 BurrTools uses the Meson build system. This document describes how to build the project on Linux and how to cross-compile for Windows.
 
+Helper scripts in `build_scripts/` install missing tools when possible, compile a release build, and package it:
+
+- Linux: `./build_scripts/build-linux.sh`
+- Windows: `build_scripts\build-windows.bat` (PowerShell; uses MSYS2 MinGW-w64, not MSVC)
+- macOS: `./build_scripts/build-macos.sh` (binaries in `build/`; then `./build_scripts/create-macos-bundle.sh` for a .app / DMG)
+
 ## Prerequisites
 
 ### Linux

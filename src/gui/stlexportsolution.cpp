@@ -234,7 +234,7 @@ stlExportSolution_c::stlExportSolution_c(puzzle_c * p,
                                          unsigned int solIdx)
   : LFl_Double_Window(false), puzzle(p), prob(probIdx), sol(solIdx)
 {
-  label("Export Solution to STL");
+  label("Export Solution Pieces to STL");
 
   stl = p->getGridType()->getStlExporter();
   bt_assert(stl);

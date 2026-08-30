@@ -135,6 +135,10 @@ configuration_c::configuration_c(void) {
 
   first_data = 0;
 
+  /* Registered first so it appears last in the Settings dialog. */
+  CNF_BOOL_D("debugrotations",    &i_debugRotations, "Debug Rotations",
+             "When Check Rotations is enabled on the Solver tab, and viewing the disassembly animation if there is a rotation move then show all the voxels which would be considered a collision to block that rotation. Only really useful for debugging rotation rules to update the code, isn't useful to help design puzzles.",
+             "false");
   CNF_BOOL_D("tooltips",          &i_use_tooltips, "Use Tooltips",
              "Show short help text when the mouse rests on buttons and other controls.",
              "true");
@@ -210,13 +214,37 @@ static void cb_RestoreDefaults_stub(Fl_Widget* /*o*/, void* v) {
   ((configuration_c*)v)->restoreDialogDefaults();
 }
 
+class SettingsWrapBox : public LFl_Box {
+
+  int wrapW;
+
+public:
+
+  SettingsWrapBox(const char *txt, int x, int y, int wrapWidth)
+    : LFl_Box(txt, x, y, 1, 1), wrapW(wrapWidth) {
+    align(FL_ALIGN_WRAP | FL_ALIGN_TOP_LEFT | FL_ALIGN_INSIDE);
+    labelcolor(FL_INACTIVE_COLOR);
+    weight(1, 0);
+  }
+
+  virtual void getMinSize(int *width, int *height) const {
+    int ww = wrapW;
+    int hh = 0;
+    fl_font(labelfont(), labelsize());
+    if (label() && label()[0])
+      fl_measure(label(), ww, hh);
+    *width = wrapW;
+    *height = hh;
+  }
+};
+
 void configuration_c::restoreDialogDefaults(void) {
 
   config_data *t = first_data;
 
   while (t) {
     if (t->dialog && t->cnf_typ == CT_BOOL && t->widget) {
-      bool enable = (strcmp(t->cnf_name, "displaylists") != 0);
+      bool enable = (strcmp(t->defaultValue, "true") == 0);
       ((Fl_Check_Button*)t->widget)->value(enable ? 1 : 0);
     }
     t = t->next;
@@ -225,12 +253,22 @@ void configuration_c::restoreDialogDefaults(void) {
 
 void configuration_c::dialog(void) {
 
-  static const int DESC_WIDTH = 312;
+  static const int WINDOW_W = 500;
+  static const int MARGIN = 16;
+  static const int TEXT_PAD = 12;
+  static const int TEXT_PAD_TOP = 8;
+  const int wrapW = WINDOW_W - 2 * MARGIN - 2 * TEXT_PAD;
 
-  LFl_Double_Window * win = new LFl_Double_Window(false);
+  LFl_Double_Window * win = new LFl_Double_Window(true);
+
+  layouter_c * body = new layouter_c(0, 0, 1, 1);
+  body->pitch(MARGIN);
+  body->weight(1, 1);
+
+  (new LFl_Box(0, 0, 1, 1))->setMinimumSize(0, TEXT_PAD_TOP);
 
   config_data *t = first_data;
-  int y = 0;
+  int y = 1;
 
   while(t) {
     if (t->dialog) {
@@ -238,29 +276,28 @@ void configuration_c::dialog(void) {
       switch (t->cnf_typ) {
       case CT_BOOL:
         {
-          LFl_Check_Button *w = new LFl_Check_Button(t->dialogText, 0, y, 2, 1);
+          LFl_Check_Button *w = new LFl_Check_Button(t->dialogText, 0, y, 1, 1);
           t->widget = w;
           w->value(*((bool*)t->cnf_var) ? 1 : 0);
-          w->pitch(4);
+          w->weight(1, 0);
 
           y++;
 
           if (t->dialogHelp && t->dialogHelp[0]) {
-            LFl_Box * desc = new LFl_Box(t->dialogHelp, 0, y, 2, 1);
-            desc->align(FL_ALIGN_WRAP | FL_ALIGN_TOP_LEFT | FL_ALIGN_INSIDE);
-            desc->labelcolor(FL_INACTIVE_COLOR);
-            desc->pitch(2);
+            (new LFl_Box(0, y, 1, 1))->setMinimumSize(0, TEXT_PAD_TOP);
+            y++;
 
-            int ww = DESC_WIDTH - 24;
-            int hh = 0;
-            fl_font(desc->labelfont(), desc->labelsize());
-            fl_measure(t->dialogHelp, ww, hh);
-            desc->setMinimumSize(DESC_WIDTH, hh + 2);
+            layouter_c * helpRow = new layouter_c(0, y, 1, 1);
+            helpRow->weight(1, 0);
+            (new LFl_Box(0, 0))->setMinimumSize(TEXT_PAD, 0);
+            new SettingsWrapBox(t->dialogHelp, 1, 0, wrapW);
+            (new LFl_Box(2, 0))->setMinimumSize(TEXT_PAD, 0);
+            helpRow->end();
             y++;
           }
 
-          LFl_Box * spacer = new LFl_Box(0, y, 2, 1);
-          spacer->setMinimumSize(DESC_WIDTH, 4);
+          LFl_Box * spacer = new LFl_Box(0, y, 1, 1);
+          spacer->setMinimumSize(wrapW, 8);
           y++;
         }
         break;
@@ -275,7 +312,7 @@ void configuration_c::dialog(void) {
     t = t->next;
   }
 
-  layouter_c * btnRow = new layouter_c(0, y, 2, 1);
+  layouter_c * btnRow = new layouter_c(0, y, 1, 1);
   btnRow->pitch(5);
 
   LFl_Box * leftPad = new LFl_Box(0, 0);
@@ -287,7 +324,7 @@ void configuration_c::dialog(void) {
   int bw = 2 * (tw + 4);
 
   LFl_Button * restore = new LFl_Button("Restore Defaults", 1, 0);
-  restore->tooltip("Turn on every option except OpenGL display lists");
+  restore->tooltip("Restore all settings to their default values");
   restore->callback(cb_RestoreDefaults_stub, this);
   restore->setMinimumSize(bw, th + 10);
 
@@ -299,6 +336,7 @@ void configuration_c::dialog(void) {
   btn->setMinimumSize(bw, th + 10);
 
   btnRow->end();
+  body->end();
 
   win->end();
   win->label("Settings");

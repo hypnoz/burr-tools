@@ -97,12 +97,12 @@
 #include <FL/Fl_Choice.H>
 #include <FL/Fl_Value_Input.H>
 #include <FL/fl_ask.H>
-#include <FL/Fl_Text_Display.H>
-#include <FL/Fl_Text_Buffer.H>
+#include <FL/Fl_Help_View.H>
 #pragma GCC diagnostic pop
 
 #include <fstream>
 #include <cstring>
+#include <string>
 
 /* returns true, if file exists, this is not the
  optimal way to do this. It would be better to open
@@ -1124,14 +1124,6 @@ void mainWindow_c::cb_SolutionAnim(Fl_Value_Slider* o) {
   }
 }
 
-void mainWindow_c::cb_DebugRotations(void) {
-  View3D->getView()->setDebugRotations(DebugRotations->value() != 0);
-  if (disassemble && SolutionAnim) {
-    disassemble->setStep(SolutionAnim->value(), config.useBlendedRemoving(), true);
-    View3D->getView()->updatePositions(disassemble);
-  }
-}
-
 void mainWindow_c::updateSolverOptionCheckboxes(void) {
 
   const bool justCount = JustCount->value() != 0;
@@ -1146,8 +1138,6 @@ void mainWindow_c::updateSolverOptionCheckboxes(void) {
     SolveDisasm->deactivate();
     CheckRotations->value(0);
     CheckRotations->deactivate();
-    DebugRotations->value(0);
-    DebugRotations->deactivate();
     JustCount->activate();
   } else if (justLevels) {
     JustCount->value(0);
@@ -1160,10 +1150,8 @@ void mainWindow_c::updateSolverOptionCheckboxes(void) {
       SolveDisasm->value(0);
       SolveDisasm->deactivate();
     }
-    /* Just Levels: Check Rotations stays available; Debug Rotations stays off. */
+    /* Just Levels: Check Rotations stays available. */
     CheckRotations->activate();
-    DebugRotations->value(0);
-    DebugRotations->deactivate();
   } else {
     JustCount->activate();
     DropDisassemblies->activate();
@@ -1178,20 +1166,10 @@ void mainWindow_c::updateSolverOptionCheckboxes(void) {
     if (SolveDisasm->value() == 0 || !canDisassemble) {
       CheckRotations->value(0);
       CheckRotations->deactivate();
-      DebugRotations->value(0);
-      DebugRotations->deactivate();
     } else {
       CheckRotations->activate();
-      if (CheckRotations->value() != 0)
-        DebugRotations->activate();
-      else {
-        DebugRotations->value(0);
-        DebugRotations->deactivate();
-      }
     }
   }
-
-  View3D->getView()->setDebugRotations(DebugRotations->value() != 0);
 }
 
 static void cb_SolverOptions_stub(Fl_Widget* o, void* v) {
@@ -1203,9 +1181,6 @@ void mainWindow_c::cb_SolverOptions(Fl_Widget* o) {
     CheckRotations->value(0);
 
   updateSolverOptionCheckboxes();
-
-  if (o == DebugRotations)
-    cb_DebugRotations();
 }
 
 static void cb_SrtFind_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SortSolutions(0); }
@@ -2228,7 +2203,7 @@ For now ignore the "Advanced Filters" buttons, but the list of pieces at the bot
 
 -- More Advanced Topics:
 The main things to learn from here are color constraints and groups. Color constraints are a way to restrict where pieces can go in the final solution. Groups are a way to group pieces together so they can be treated as a single piece. Color constraints are set in the Entities tab, by creating a new color at the bottom. When you add a voxel to a piece, it will have a small color indicator on it showing that color constraint is part of the voxel. Add the color to all the voxels in the piece, and then in the solution shape, add that same color constraint to where the piece must go.
-Groups are set in the Puzzle tab, using the "Groups" button. If you want 2 pieces to be treated as a single piece, choose the "Add Group" button, then next to the two pieces put a number like 1 or 2 that is the same for both pieces. Back in the list of pieces, you will see a label like "G1(2)" which is the main group number and sub group number within that group.
+Groups are set in the Puzzle tab, using the "Set Groups" button. If you want 2 pieces to be treated as a single piece, choose the "Add Group" button, then next to the two pieces put a number like 1 or 2 that is the same for both pieces. Back in the list of pieces, you will see a label like "G1(2)" which is the main group number and sub group number within that group.
 
 For even more advanced topics or learning, visit the BurrTools documentation website at https://burrtools.sourceforge.net/gui-doc/toc.html
 The documentation was written for an older version of BurrTools, but the concepts are still valid.
@@ -2237,15 +2212,55 @@ The documentation was written for an older version of BurrTools, but the concept
 static void cb_TutorialClose_stub(Fl_Widget* /*o*/, void* v) { ((Fl_Double_Window*)v)->hide(); }
 static void cb_Tutorial_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_Tutorial(); }
 
-class LFl_Text_Display : public Fl_Text_Display, public layoutable_c {
+class LFl_Help_View : public Fl_Help_View, public layoutable_c {
   public:
-  LFl_Text_Display(int x = 0, int y = 0, int w = 1, int h = 1)
-    : Fl_Text_Display(0, 0, 0, 0), layoutable_c(x, y, w, h) {}
+  LFl_Help_View(int x = 0, int y = 0, int w = 1, int h = 1)
+    : Fl_Help_View(0, 0, 0, 0), layoutable_c(x, y, w, h) {}
   virtual void getMinSize(int *width, int *height) const {
     *width = 30;
     *height = 20;
   }
 };
+
+static void htmlAppendEscaped(std::string &out, const char *s, size_t n) {
+  for (size_t i = 0; i < n; i++) {
+    switch (s[i]) {
+      case '&': out += "&amp;"; break;
+      case '<': out += "&lt;"; break;
+      case '>': out += "&gt;"; break;
+      default:  out += s[i]; break;
+    }
+  }
+}
+
+static std::string tutorialToHtml() {
+  std::string html;
+  html += "<html><body>";
+  html += "<p><font size=\"6\"><b><u>BurrTools Basics Tutorial</u></b></font></p>";
+
+  const char *p = tutorialText;
+  while (*p) {
+    const char *eol = strchr(p, '\n');
+    size_t len = eol ? (size_t)(eol - p) : strlen(p);
+
+    if (len >= 3 && p[0] == '-' && p[1] == '-' && p[2] == ' ') {
+      html += "<p><font size=\"5\"><b>";
+      htmlAppendEscaped(html, p + 3, len - 3);
+      html += "</b></font></p>";
+    } else if (len > 0) {
+      html += "<p>";
+      htmlAppendEscaped(html, p, len);
+      html += "</p>";
+    }
+
+    if (!eol)
+      break;
+    p = eol + 1;
+  }
+
+  html += "</body></html>";
+  return html;
+}
 
 void mainWindow_c::cb_Tutorial(void) {
 
@@ -2256,16 +2271,14 @@ void mainWindow_c::cb_Tutorial(void) {
   body->pitch(16);
   body->weight(1, 1);
 
-  Fl_Text_Buffer buf;
-  buf.text(tutorialText);
-
-  LFl_Text_Display *txt = new LFl_Text_Display(0, 0, 1, 1);
-  txt->buffer(&buf);
-  txt->wrap_mode(Fl_Text_Display::WRAP_AT_BOUNDS, 0);
+  LFl_Help_View *txt = new LFl_Help_View(0, 0, 1, 1);
   txt->textfont(FL_HELVETICA);
-  txt->textsize(14);
+  txt->textsize(16);
   txt->box(FL_FLAT_BOX);
   txt->color(FL_BACKGROUND_COLOR);
+  txt->textcolor(FL_FOREGROUND_COLOR);
+  std::string html = tutorialToHtml();
+  txt->value(html.c_str());
   txt->weight(1, 1);
   txt->setMinimumSize(720, 520);
   body->end();
@@ -2273,15 +2286,22 @@ void mainWindow_c::cb_Tutorial(void) {
   layouter_c *btns = new layouter_c(0, 1, 1, 1);
   btns->pitch(8);
   (new LFl_Box(0, 0))->weight(1, 0);
-  (new LFl_Button("Close", 1, 0, 1, 1))->callback(cb_TutorialClose_stub, &win);
+
+  int tw = 0, th = 0;
+  fl_font(FL_HELVETICA, FL_NORMAL_SIZE);
+  fl_measure("Close", tw, th);
+
+  LFl_Button * closeBtn = new LFl_Button("Close", 1, 0, 1, 1);
+  closeBtn->callback(cb_TutorialClose_stub, &win);
+  closeBtn->setMinimumSize(3 * (tw + 4), th + 16);
+
   (new LFl_Box(2, 0))->weight(1, 0);
   btns->end();
 
   win.show();
-  txt->scroll(0, 0);
+  txt->topline(0);
   while (win.visible())
     Fl::wait();
-  txt->buffer(0);
 }
 
 void mainWindow_c::StatPieceInfo(unsigned int pc) {
@@ -4077,6 +4097,11 @@ void mainWindow_c::CreateProblemTab(void) {
     (new LFl_Box(1, 0))->setMinimumSize(SZ_GAP, 0);
 
     BtnSetResult = new LFlatButton_c(2, 0, 1, 1, "Set Result", " Set selected shape as result ", cb_ShapeToResult_stub, this);
+    {
+      int tw = 0, th = 0;
+      BtnSetResult->measure_label(tw, th);
+      ((LFlatButton_c*)BtnSetResult)->setMinimumSize(tw + 20, th + 8);
+    }
 
     o->end();
 
@@ -4097,41 +4122,51 @@ void mainWindow_c::CreateProblemTab(void) {
 
     new LSeparator_c(0, 0, 1, 1, 0, true);
 
-    layouter_c * o = new layouter_c(0, 1);
+    {
+      layouter_c * o = new layouter_c(0, 1);
+      int xp = 0;
 
-    int xp = 0;
+      BtnAddShape = new LFlatButton_c(xp++, 0, 1, 1, "+1", " Add another one of the selected shape ", cb_AddShapeToProblem_stub, this);
+      ((LFlatButton_c*)BtnAddShape)->weight(1, 0);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnRemShape = new LFlatButton_c(xp++, 0, 1, 1, "-1", " Remove one of the selected shapes ", cb_RemoveShapeFromProblem_stub, this);
+      ((LFlatButton_c*)BtnRemShape)->weight(1, 0);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnAddAll = new LFlatButton_c(xp++, 0, 1, 1, "All +1", " Add one of all shapes except result ", cb_AddAllShapesToProblem_stub, this);
+      ((LFlatButton_c*)BtnAddAll)->weight(1, 0);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnRemAll = new LFlatButton_c(xp++, 0, 1, 1, "Clear All", " Remove all pieces ", cb_RemoveAllShapesFromProblem_stub, this);
+      ((LFlatButton_c*)BtnRemAll)->weight(1, 0);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnProbShapeLeft = new LFlatButton_c(xp++, 0, 1, 1, "@-14->", " Exchange current shape with previous shape ", cb_ProbShapeLeft_stub, this);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnProbShapeRight = new LFlatButton_c(xp++, 0, 1, 1, "@-16->", " Exchange current shape with next shape ", cb_ProbShapeRight_stub, this);
 
-    BtnAddShape = new LFlatButton_c(xp++, 0, 1, 1, "+1", " Add another one of the selected shape ", cb_AddShapeToProblem_stub, this);
-    ((LFlatButton_c*)BtnAddShape)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnRemShape = new LFlatButton_c(xp++, 0, 1, 1, "-1", " Remove one of the selected shapes ", cb_RemoveShapeFromProblem_stub, this);
-    ((LFlatButton_c*)BtnRemShape)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnMinZero = new LFlatButton_c(xp++, 0, 1, 1, "min=0", " Set minimum number of pieces to 0 ", cb_SetShapeMinimumToZero_stub, this);
-    ((LFlatButton_c*)BtnMinZero)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnAddAll = new LFlatButton_c(xp++, 0, 1, 1, "all+1", " Add one of all shapes except result ", cb_AddAllShapesToProblem_stub, this);
-    ((LFlatButton_c*)BtnAddAll)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnRemAll = new LFlatButton_c(xp++, 0, 1, 1, "Clr", " Remove all pieces ", cb_RemoveAllShapesFromProblem_stub, this);
-    ((LFlatButton_c*)BtnRemAll)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnSetAllRange = new LFlatButton_c(xp++, 0, 1, 1, "Set All", " Set min/max piece count for all shapes in the current problem ", cb_SetAllRange_stub, this);
-    ((LFlatButton_c*)BtnSetAllRange)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnGroup =    new LFlatButton_c(xp++, 0, 1, 1, "Groups", " Edit groups of the problem ", cb_ShapeGroup_stub, this);
-    ((LFlatButton_c*)BtnGroup)->weight(1, 0);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnProbShapeLeft = new LFlatButton_c(xp++, 0, 1, 1, "@-14->", " Exchange current shape with previous shape ", cb_ProbShapeLeft_stub, this);
-    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
-    BtnProbShapeRight = new LFlatButton_c(xp++, 0, 1, 1, "@-16->", " Exchange current shape with next shape ", cb_ProbShapeRight_stub, this);
-
-    o->end();
+      o->end();
+    }
 
     (new LFl_Box(0, 2))->setMinimumSize(0, SZ_GAP);
 
+    {
+      layouter_c * o = new layouter_c(0, 3);
+      int xp = 0;
+
+      BtnMinZero = new LFlatButton_c(xp++, 0, 1, 1, "min=0", " Set minimum number of pieces to 0 ", cb_SetShapeMinimumToZero_stub, this);
+      ((LFlatButton_c*)BtnMinZero)->weight(1, 0);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnSetAllRange = new LFlatButton_c(xp++, 0, 1, 1, "Set All Ranges", " Set min/max piece count for all shapes in the current problem ", cb_SetAllRange_stub, this);
+      ((LFlatButton_c*)BtnSetAllRange)->weight(1, 0);
+      (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+      BtnGroup =    new LFlatButton_c(xp++, 0, 1, 1, "Set Groups", " Edit groups of the problem ", cb_ShapeGroup_stub, this);
+      ((LFlatButton_c*)BtnGroup)->weight(1, 0);
+
+      o->end();
+    }
+
+    (new LFl_Box(0, 4))->setMinimumSize(0, SZ_GAP);
+
     PiecesCountList = new PiecesList(0, 0, 100, 100);
-    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 3, 1, 1, PiecesCountList);
+    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 5, 1, 1, PiecesCountList);
     shapeGroup->callback(cb_PiecesClicked_stub, this);
     shapeGroup->tooltip(" Show which shapes are used in the current problem and how often they are used, can be used to select shapes ");
     shapeGroup->weight(1, 1);
@@ -4224,17 +4259,12 @@ void mainWindow_c::CreateSolveTab(void) {
     CheckRotations->clear_visible_focus();
     CheckRotations->callback(cb_SolverOptions_stub, this);
 
-    DebugRotations = new LFl_Check_Button("Debug Rotations", 0, 2, 1, 1);
-    DebugRotations->tooltip(" During solution animation, highlight rotation clearance: cyan = sweep volume, yellow = empty axis-cross danger slots, magenta = hard conflicts. ");
-    DebugRotations->clear_visible_focus();
-    DebugRotations->callback(cb_SolverOptions_stub, this);
-
-    JustCount = new LFl_Check_Button("Just Count", 0, 3, 1, 1);
+    JustCount = new LFl_Check_Button("Just Count", 0, 2, 1, 1);
     JustCount->tooltip(" Don\'t save the solutions, just count the number of them ");
     JustCount->clear_visible_focus();
     JustCount->callback(cb_SolverOptions_stub, this);
 
-    DropDisassemblies = new LFl_Check_Button("Just Levels", 0, 4, 1, 1);
+    DropDisassemblies = new LFl_Check_Button("Just Levels", 0, 3, 1, 1);
     DropDisassemblies->tooltip(" Don\'t save the Disassemblies, just the information about them ");
     DropDisassemblies->clear_visible_focus();
     DropDisassemblies->callback(cb_SolverOptions_stub, this);
@@ -4540,7 +4570,7 @@ void mainWindow_c::CreateSolveTab(void) {
 
     o = new layouter_c(0, 14);
 
-    BtnExportSolutionSTL = new LFlatButton_c(0, 0, 1, 1, "Export Solution to STL",
+    BtnExportSolutionSTL = new LFlatButton_c(0, 0, 1, 1, "Export Solution Pieces to STL",
         " Export every piece type of the currently selected solution to individual STL files ",
         cb_ExportSolutionSTL_stub, this);
     ((LFlatButton_c*)BtnExportSolutionSTL)->weight(1, 0);
@@ -4572,6 +4602,11 @@ void mainWindow_c::activateConfigOptions(void) {
 
   View3D->getView()->useLightning(config.useLightning());
   View3D->getView()->setRotaterMethod(config.rotationMethod());
+  View3D->getView()->setDebugRotations(config.debugRotations());
+  if (disassemble && SolutionAnim) {
+    disassemble->setStep(SolutionAnim->value(), config.useBlendedRemoving(), true);
+    View3D->getView()->updatePositions(disassemble);
+  }
 }
 
 mainWindow_c::mainWindow_c(gridType_c * gt) : LFl_Double_Window(true) {
