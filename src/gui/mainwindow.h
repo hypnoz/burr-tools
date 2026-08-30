@@ -109,7 +109,7 @@ class mainWindow_c : public LFl_Double_Window {
   FlatButton *BtnNewColor, *BtnDelColor, *BtnChnColor;
   FlatButton *BtnNewProb, *BtnDelProb, *BtnCpyProb, *BtnRenProb, *BtnProbLeft, *BtnProbRight;
   FlatButton *BtnColSrtPc, *BtnColSrtRes, *BtnColAdd, *BtnColRem;
-  FlatButton *BtnSetResult, *BtnAddShape, *BtnRemShape, *BtnMinZero, *BtnAddAll, *BtnRemAll, *BtnGroup, *BtnProbShapeLeft, *BtnProbShapeRight;
+  FlatButton *BtnSetResult, *BtnAddShape, *BtnRemShape, *BtnMinZero, *BtnAddAll, *BtnRemAll, *BtnSetAllRange, *BtnGroup, *BtnProbShapeLeft, *BtnProbShapeRight;
 
   Fl_Progress *SolvingProgress;
   Fl_Value_Output *OutputAssemblies;
@@ -150,6 +150,7 @@ class mainWindow_c : public LFl_Double_Window {
   FlatButton *BtnSrtFind, *BtnSrtLevel, *BtnSrtMoves, *BtnSrtPieces;
   FlatButton *BtnDelAll, *BtnDelBefore, *BtnDelAt, *BtnDelAfter, *BtnDelDisasm;
   FlatButton *BtnDisasmDel, *BtnDisasmDelAll, *BtnDisasmAdd, *BtnDisasmAddAll, *BtnDisasmAddMissing;
+  FlatButton *BtnExportSolutionSTL;
 
   // the zoom levels for all 3 tabs independent, so that the problem
   // tab can have a wider view
@@ -251,6 +252,7 @@ public:
   void cb_AddAllShapesToProblem(void);
   void cb_RemoveShapeFromProblem(void);
   void cb_RemoveAllShapesFromProblem(void);
+  void cb_SetAllRange(void);
   void cb_ProbShapeExchange(int with);
 
   void cb_PcSel(LBlockListGroup_c* reason);
@@ -331,6 +333,7 @@ public:
   void cb_DeleteAllDisasm(void);
   void cb_AddDisasm(void);
   void cb_AddAllDisasm(bool all);
+  void cb_ExportSolutionSTL(void);
 
   void activateConfigOptions(void);
 };

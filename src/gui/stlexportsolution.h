@@ -18,45 +18,49 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
-#ifndef __STATUS_WINDOW__
-#define __STATUS_WINDOW__
+
+/* Export every unique piece shape of the currently selected solution to
+ * individual STL files, one file per distinct piece type.
+ */
+#ifndef __STL_EXPORT_SOLUTION_H__
+#define __STL_EXPORT_SOLUTION_H__
 
 #include "Layouter.h"
+#include "../lib/stl.h"
+#include "../halfedge/modifiers.h"
 
 #include <vector>
 
 class puzzle_c;
 
-class statusWindow_c : public layouter_c {
+/* Internal helper — forward-declared so the vector member compiles without
+ * pulling in the full definition from the anonymous namespace in the .cpp */
+namespace stlExportSolutionImpl { struct Param; }
+
+class stlExportSolution_c : public LFl_Double_Window {
 
   private:
 
-    puzzle_c * puz;
-    void * cbUser;
-    Fl_Callback * closeCb;
-    Fl_Callback * changedCb;
+    puzzle_c    * puzzle;
+    unsigned int  prob;
+    unsigned int  sol;
 
-    std::vector<LFl_Check_Button*> selection;
-    std::vector<bool> identicalMirror;
-    std::vector<bool> identicalShape;
-    std::vector<bool> identicalComplete;
+    stlExporter_c * stl;
 
-    void clearChildren(void);
+    std::vector<stlExportSolutionImpl::Param*> params;
+
+    LFl_Input        * Pname;
+    LFl_Check_Button * Binary;
+    LFl_Box          * status;
 
   public:
 
-    statusWindow_c(int x, int y, int w, int h);
+    stlExportSolution_c(puzzle_c * p, unsigned int prob, unsigned int sol);
+    virtual ~stlExportSolution_c(void);
 
-    void setCallbacks(Fl_Callback * onClose, Fl_Callback * onChanged, void * user);
-    void populate(puzzle_c * p);
-
-    void cb_removeSelected(void);
-    void cb_selectHoles(void);
-    void cb_selectIdenticalShapes(void);
-    void cb_selectIdenticalComplete(void);
-    void cb_selectIdenticalMirror(void);
-    void cb_close(void);
-    void cb_refresh(void);
+    void cb_Export(void);
+    void cb_Abort(void);
+    void cb_FileChooser(void);
 };
 
 #endif

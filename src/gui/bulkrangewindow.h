@@ -18,45 +18,33 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
-#ifndef __STATUS_WINDOW__
-#define __STATUS_WINDOW__
+#ifndef __BULKRANGE_WINDOW_H__
+#define __BULKRANGE_WINDOW_H__
 
 #include "Layouter.h"
 
-#include <vector>
+class Fl_Int_Input;
 
-class puzzle_c;
-
-class statusWindow_c : public layouter_c {
+/* Dialog that lets the user specify a min/max piece count range and apply
+ * it to every shape in the current problem at once.
+ */
+class bulkRangeWindow_c : public LFl_Double_Window {
 
   private:
 
-    puzzle_c * puz;
-    void * cbUser;
-    Fl_Callback * closeCb;
-    Fl_Callback * changedCb;
-
-    std::vector<LFl_Check_Button*> selection;
-    std::vector<bool> identicalMirror;
-    std::vector<bool> identicalShape;
-    std::vector<bool> identicalComplete;
-
-    void clearChildren(void);
+    bool _ok;
+    Fl_Int_Input *minInput, *maxInput;
 
   public:
 
-    statusWindow_c(int x, int y, int w, int h);
+    bulkRangeWindow_c(void);
 
-    void setCallbacks(Fl_Callback * onClose, Fl_Callback * onChanged, void * user);
-    void populate(puzzle_c * p);
+    bool okSelected(void) const { return _ok; }
 
-    void cb_removeSelected(void);
-    void cb_selectHoles(void);
-    void cb_selectIdenticalShapes(void);
-    void cb_selectIdenticalComplete(void);
-    void cb_selectIdenticalMirror(void);
-    void cb_close(void);
-    void cb_refresh(void);
+    void okay_cb(void);
+
+    unsigned int getMin(void) const;
+    unsigned int getMax(void) const;
 };
 
 #endif

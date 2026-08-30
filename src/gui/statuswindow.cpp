@@ -58,6 +58,10 @@ static void cb_ProgressClose_stub(Fl_Widget*, void* v) { ((LFl_Double_Window*)v)
 static void cb_DetailsClose_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_close(); }
 static void cb_DetailsRefresh_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_refresh(); }
 static void cb_RemoveSelected_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_removeSelected(); }
+static void cb_SelectHoles_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_selectHoles(); }
+static void cb_SelectIdenticalShapes_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_selectIdenticalShapes(); }
+static void cb_SelectIdenticalComplete_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_selectIdenticalComplete(); }
+static void cb_SelectIdenticalMirror_stub(Fl_Widget*, void* v) { ((statusWindow_c*)v)->cb_selectIdenticalMirror(); }
 
 class StatusProgress : public LFl_Double_Window {
 
@@ -98,7 +102,7 @@ statusWindow_c::statusWindow_c(int x, int y, int w, int h)
   : layouter_c(x, y, w, h), puz(0), cbUser(0), closeCb(0), changedCb(0)
 {
   box(FL_THIN_UP_BOX);
-  setMinimumSize(200, 180);
+  setMinimumSize(200, 210);
   clip_children(1);
   end();
 }
@@ -113,6 +117,9 @@ void statusWindow_c::setCallbacks(Fl_Callback * onClose, Fl_Callback * onChanged
 void statusWindow_c::clearChildren(void)
 {
   selection.clear();
+  identicalMirror.clear();
+  identicalShape.clear();
+  identicalComplete.clear();
   while (children()) {
     Fl_Widget * c = child(0);
     remove(*c);
@@ -160,6 +167,43 @@ void statusWindow_c::cb_removeSelected(void) {
     changedCb(this, cbUser);
 
   populate(puz);
+}
+
+void statusWindow_c::cb_selectHoles(void) {
+
+  if (!puz)
+    return;
+
+  bt_assert(selection.size() <= puz->getNumberOfShapes());
+
+  for (unsigned int s = 0; s < selection.size(); s++) {
+    const voxel_c * v = puz->getShape(s);
+    bool has2DHoles = !v->connected(0, false, 0, false);
+    bool has3DHoles = !v->connected(0, false, 0);
+    if (has2DHoles || has3DHoles)
+      selection[s]->value(1);
+  }
+}
+
+void statusWindow_c::cb_selectIdenticalShapes(void) {
+
+  for (unsigned int s = 0; s < selection.size(); s++)
+    if (s < identicalShape.size() && identicalShape[s])
+      selection[s]->value(1);
+}
+
+void statusWindow_c::cb_selectIdenticalComplete(void) {
+
+  for (unsigned int s = 0; s < selection.size(); s++)
+    if (s < identicalComplete.size() && identicalComplete[s])
+      selection[s]->value(1);
+}
+
+void statusWindow_c::cb_selectIdenticalMirror(void) {
+
+  for (unsigned int s = 0; s < selection.size(); s++)
+    if (s < identicalMirror.size() && identicalMirror[s])
+      selection[s]->value(1);
 }
 
 void statusWindow_c::populate(puzzle_c * p) {
@@ -240,6 +284,7 @@ void statusWindow_c::populate(puzzle_c * p) {
     unsigned int shapeIdx;
     unsigned char shapeTrans;
     bool shapeKnown = shapeTab.getSpace(v, &shapeIdx, &shapeTrans, voxelTable_c::PAR_MIRROR);
+    identicalMirror.push_back(shapeKnown);
 
     if (shapeKnown)
     {
@@ -254,6 +299,7 @@ void statusWindow_c::populate(puzzle_c * p) {
     Fl::wait(0);
 
     shapeKnown = shapeTab.getSpace(v, &shapeIdx, &shapeTrans, 0);
+    identicalShape.push_back(shapeKnown);
 
     if (shapeKnown)
     {
@@ -268,6 +314,7 @@ void statusWindow_c::populate(puzzle_c * p) {
     Fl::wait(0);
 
     shapeKnown = shapeTab.getSpace(v, &shapeIdx, &shapeTrans, voxelTable_c::PAR_COLOUR);
+    identicalComplete.push_back(shapeKnown && shapeTrans < p->getGridType()->getSymmetries()->getNumTransformations());
 
     if (shapeKnown && shapeTrans < p->getGridType()->getSymmetries()->getNumTransformations())
     {
@@ -450,6 +497,39 @@ void statusWindow_c::populate(puzzle_c * p) {
 
   LFl_Box * rightPad = new LFl_Box(6, 0);
   rightPad->weight(1, 0);
+
+  (new LFl_Box(0, 1, 7, 1))->setMinimumSize(0, 6);
+
+  layouter_c * selRow = new layouter_c(0, 2, 7, 1);
+  selRow->weight(1, 0);
+
+  btn = new LFl_Button("Select holes", 0, 0, 1, 1);
+  btn->callback(cb_SelectHoles_stub, this);
+  btn->tooltip(" Select all shapes that have 2D or 3D holes ");
+  btn->weight(1, 0);
+
+  (new LFl_Box(1, 0))->setMinimumSize(6, 0);
+
+  btn = new LFl_Button("Select Identical Shapes", 2, 0, 1, 1);
+  btn->callback(cb_SelectIdenticalShapes_stub, this);
+  btn->tooltip(" Select shapes that match another shape ignoring colour ");
+  btn->weight(1, 0);
+
+  (new LFl_Box(3, 0))->setMinimumSize(6, 0);
+
+  btn = new LFl_Button("Select Identical Complete", 4, 0, 1, 1);
+  btn->callback(cb_SelectIdenticalComplete_stub, this);
+  btn->tooltip(" Select shapes that match another shape including colour ");
+  btn->weight(1, 0);
+
+  (new LFl_Box(5, 0))->setMinimumSize(6, 0);
+
+  btn = new LFl_Button("Select Identical Mirror", 6, 0, 1, 1);
+  btn->callback(cb_SelectIdenticalMirror_stub, this);
+  btn->tooltip(" Select shapes that match another shape as a mirror image ");
+  btn->weight(1, 0);
+
+  selRow->end();
 
   fr->end();
   fr->clip_children(1);

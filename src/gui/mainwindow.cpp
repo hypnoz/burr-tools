@@ -49,6 +49,8 @@
 #include "vectorexportwindow.h"
 #include "convertwindow.h"
 #include "assmimportwindow.h"
+#include "bulkrangewindow.h"
+#include "stlexportsolution.h"
 
 #include "LFl_Tile.h"
 
@@ -805,6 +807,46 @@ void mainWindow_c::cb_RemoveAllShapesFromProblem(void) {
   StatProblemInfo(problemSelector->getSelection());
 }
 
+static void cb_SetAllRange_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_SetAllRange(); }
+void mainWindow_c::cb_SetAllRange(void) {
+
+  if (problemSelector->getSelection() >= puzzle->getNumberOfProblems()) {
+    fl_message("First create a problem");
+    return;
+  }
+
+  bulkRangeWindow_c win;
+  win.show();
+  while (win.visible())
+    Fl::wait();
+
+  if (!win.okSelected())
+    return;
+
+  unsigned int prob = problemSelector->getSelection();
+  changeProblem(prob);
+
+  problem_c * pr = puzzle->getProblem(prob);
+
+  unsigned int newMin = win.getMin();
+  unsigned int newMax = win.getMax();
+  if (newMin > newMax)
+    newMax = newMin;
+
+  for (unsigned int p = 0; p < pr->getNumberOfParts(); p++) {
+    unsigned int shapeId = pr->getShapeIdOfPart(p);
+    pr->setShapeMaximum(shapeId, newMax);
+    pr->setShapeMinimum(shapeId, newMin);
+  }
+
+  changed = true;
+  PiecesCountList->redraw();
+  PcVis->setPuzzle(puzzle->getProblem(solutionProblem->getSelection()));
+
+  activateProblem(problemSelector->getSelection());
+  StatProblemInfo(problemSelector->getSelection());
+}
+
 static void cb_ShapeGroup_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ShapeGroup(); }
 void mainWindow_c::cb_ShapeGroup(void) {
 
@@ -838,6 +880,23 @@ void mainWindow_c::cb_ShapeGroup(void) {
   }
 
   delete groupEditWin;
+}
+
+static void cb_ExportSolutionSTL_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_ExportSolutionSTL(); }
+void mainWindow_c::cb_ExportSolutionSTL(void) {
+
+  unsigned int prob = solutionProblem->getSelection();
+  if (prob >= puzzle->getNumberOfProblems())
+    return;
+
+  unsigned int sol = (unsigned int)SolutionSel->value() - 1;
+  if (sol >= puzzle->getProblem(prob)->getNumberOfSavedSolutions())
+    return;
+
+  stlExportSolution_c w(puzzle, prob, sol);
+  w.show();
+  while (w.visible())
+    Fl::wait();
 }
 
 static void cb_BtnPlacementBrowser_stub(Fl_Widget* /*o*/, void* v) { ((mainWindow_c*)v)->cb_BtnPlacementBrowser(); }
@@ -3093,9 +3152,11 @@ void mainWindow_c::updateInterface(void) {
         (!assmThread || (&(assmThread->getProblem()) != puzzle->getProblem(problemSelector->getSelection())))) {
       BtnAddAll->activate();
       BtnRemAll->activate();
+      BtnSetAllRange->activate();
     } else {
       BtnAddAll->deactivate();
       BtnRemAll->deactivate();
+      BtnSetAllRange->deactivate();
     }
 
   } else {
@@ -3192,6 +3253,17 @@ void mainWindow_c::updateInterface(void) {
       } else {
         BtnPlacement->deactivate();
         BtnMovement->deactivate();
+      }
+
+      if ((ggt->getGridType()->getCapabilities() & gridType_c::CAP_STLEXPORT) &&
+          numSol > 0 &&
+          pr->getNumberOfParts() > 0)
+      {
+        BtnExportSolutionSTL->activate();
+      }
+      else
+      {
+        BtnExportSolutionSTL->deactivate();
       }
 
       if (numSol >= 2) {
@@ -3308,6 +3380,7 @@ void mainWindow_c::updateInterface(void) {
       BtnDisasmAdd->deactivate();
       BtnDisasmAddAll->deactivate();
       BtnDisasmAddMissing->deactivate();
+      BtnExportSolutionSTL->deactivate();
 
       PcVis->setPuzzle(0);
     }
@@ -4043,6 +4116,9 @@ void mainWindow_c::CreateProblemTab(void) {
     BtnRemAll = new LFlatButton_c(xp++, 0, 1, 1, "Clr", " Remove all pieces ", cb_RemoveAllShapesFromProblem_stub, this);
     ((LFlatButton_c*)BtnRemAll)->weight(1, 0);
     (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
+    BtnSetAllRange = new LFlatButton_c(xp++, 0, 1, 1, "Set All", " Set min/max piece count for all shapes in the current problem ", cb_SetAllRange_stub, this);
+    ((LFlatButton_c*)BtnSetAllRange)->weight(1, 0);
+    (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
     BtnGroup =    new LFlatButton_c(xp++, 0, 1, 1, "Groups", " Edit groups of the problem ", cb_ShapeGroup_stub, this);
     ((LFlatButton_c*)BtnGroup)->weight(1, 0);
     (new LFl_Box(xp++, 0))->setMinimumSize(SZ_GAP, 0);
@@ -4462,8 +4538,19 @@ void mainWindow_c::CreateSolveTab(void) {
 
     (new LFl_Box(0, 13))->setMinimumSize(0, SZ_GAP);
 
+    o = new layouter_c(0, 14);
+
+    BtnExportSolutionSTL = new LFlatButton_c(0, 0, 1, 1, "Export Solution to STL",
+        " Export every piece type of the currently selected solution to individual STL files ",
+        cb_ExportSolutionSTL_stub, this);
+    ((LFlatButton_c*)BtnExportSolutionSTL)->weight(1, 0);
+
+    o->end();
+
+    (new LFl_Box(0, 15))->setMinimumSize(0, SZ_GAP);
+
     PcVis = new PieceVisibility(0, 0, 100, 100);
-    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 14, 1, 1, PcVis);
+    LBlockListGroup_c * shapeGroup = new LBlockListGroup_c(0, 16, 1, 1, PcVis);
     shapeGroup->callback(cb_PcVis_stub, this);
     shapeGroup->tooltip(" Change appearance of the pieces between normal, grid and invisible ");
     shapeGroup->weight(1, 1);
@@ -4565,7 +4652,7 @@ mainWindow_c::mainWindow_c(gridType_c * gt) : LFl_Double_Window(true) {
 
   detailsPanel = new statusWindow_c(0, 1, 1, 1);
   detailsPanel->weight(1, 0);
-  detailsPanel->setMinimumSize(200, 220);
+  detailsPanel->setMinimumSize(200, 250);
   detailsPanel->setShrinkMinSize(VIEW3D_SHRINK_MIN, 0);
   detailsPanel->setCallbacks(cb_DetailsClose_stub, cb_DetailsChanged_stub, this);
   detailsPanel->hide();
