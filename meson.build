@@ -70,12 +70,17 @@ libburr_src = [
   'src/lib/assembler.cpp',
   'src/lib/assembler_0.cpp',
   'src/lib/assembler_1.cpp',
+  'src/lib/assembler_bt2.cpp',
+  'src/lib/bt2_dancingcells.cpp',
   'src/lib/assembly.cpp',
   'src/lib/bt_assert.cpp',
+  'src/lib/bt2_assemble.cpp',
   'src/lib/burrgrower.cpp',
   'src/lib/converter.cpp',
   'src/lib/disassembler_0.cpp',
   'src/lib/disassembler_a.cpp',
+  'src/lib/disassembler_factory.cpp',
+  'src/lib/disassembler_crowell.cpp',
   'src/lib/disassemblerhashes.cpp',
   'src/lib/disassemblernode.cpp',
   'src/lib/disassembly.cpp',
@@ -93,6 +98,7 @@ libburr_src = [
   'src/lib/problem.cpp',
   'src/lib/puzzle.cpp',
   'src/lib/rotationmoves_0.cpp',
+  'src/lib/rotationmoves_crowell.cpp',
   'src/lib/rotationrules.cpp',
   'src/lib/solution.cpp',
   'src/lib/solvethread.cpp',
@@ -123,6 +129,7 @@ gui_src = [
   'src/gui/bulkrangewindow.cpp',
   'src/gui/buttongroup.cpp',
   'src/gui/configuration.cpp',
+  'src/gui/debugstatspanel.cpp',
   'src/gui/filechooser.cpp',
   'src/gui/constraintsgroup.cpp',
   'src/gui/convertwindow.cpp',
@@ -227,8 +234,16 @@ if not fltk_dep.found()
   cmake_opts = cmake.subproject_options()
   cmake_opts.add_cmake_defines({
     'FLTK_BUILD_TEST': 'OFF',
-    'FLTK_BUILD_EXAMPLES': 'OFF'
+    'FLTK_BUILD_EXAMPLES': 'OFF',
+    'FLTK_BUILD_FLUID': 'OFF',
+    'FLTK_BUILD_FLTK_OPTIONS': 'OFF'
   })
+
+  if host_machine.system() == 'darwin'
+    cmake_opts.add_cmake_defines({
+      'CMAKE_OSX_DEPLOYMENT_TARGET': '11.0'
+    })
+  endif
   
   if host_machine.system() == 'windows'
     gdiplus_dep = cxx.find_library('gdiplus')

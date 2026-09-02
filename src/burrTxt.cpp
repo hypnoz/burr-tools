@@ -24,7 +24,9 @@
 #include "lib/assembler.h"
 #include "lib/assembly.h"
 #include "lib/disassembler.h"
-#include "lib/disassembler_0.h"
+#include "lib/disassembler_factory.h"
+#include "lib/solvertype.h"
+#include "lib/bt2_assemble.h"
 #include "lib/disassembly.h"
 #include "lib/print.h"
 #include "lib/voxel.h"
@@ -42,6 +44,7 @@
 
 #include <fstream>
 #include <iostream>
+#include <mutex>
 
 using namespace std;
 
@@ -52,6 +55,7 @@ bool printDisassemble;
 bool printSolutions;
 bool quiet;
 bool jsonOutput;
+solverType_e solverType;
 
 disassembler_c * d;
 
@@ -145,6 +149,7 @@ public:
   int Solutions;
   int pn;
   problem_c * puzzle;
+  std::mutex cbMutex;
 
   bool hasBest;
   char bestDotlevel[200];
@@ -178,6 +183,8 @@ public:
   }
 
   bool assembly(assembly_c * a) {
+
+    std::lock_guard<std::mutex> lock(cbMutex);
 
     Assemblies++;
 
@@ -267,6 +274,7 @@ void usage(void) {
   cout << "  file: puzzle file with the puzzle definition to solve\n\n";
   cout << "  --json  machine-readable result for batch tools (implies -d -q -r;\n";
   cout << "          prints one JSON object with the highest disassembly level)\n";
+  cout << "  Short options may be combined (e.g. -dR, -rq).\n";
   cout << "  -d      try to disassemble and only print solutions that do disassemble\n";
   cout << "  -p      print the disassembly plan\n";
   cout << "  -r      reduce the placements before starting to solve the puzzle\n";
@@ -277,6 +285,12 @@ void usage(void) {
   cout << "  -o n    select the problem to solve\n";
   cout << "  -o all  solves all problems in file\n";
   cout << "  -x      only redisassemble the given solutions\n";
+  cout << "  --solver TYPE\n";
+  cout << "          solver engine. If omitted, BurrTools Classic is used.\n";
+  cout << "          TYPE (case-insensitive; quotes needed if it has spaces):\n";
+  cout << "            \"BurrTools Classic\"  complete take-apart (also: classic)\n";
+  cout << "            \"Andrew Crowell\"     90° take-apart heuristics (also: crowell)\n";
+  cout << "            \"BurrTools 2\"        Classic take-apart + dancing-cells assembly (also: bt2)\n";
   cout << "  -a      ask for information about the current puzzle, the next letters must be:\n";
   cout << "     s0   print solutions with the only the used pieces\n";
   cout << "     s1   print solutions including the assemblies\n";
@@ -298,6 +312,7 @@ int main(int argv, char* args[]) {
   printSolutions = false;
   quiet = false;
   jsonOutput = false;
+  solverType = SOLVER_CLASSIC;
   bool assemble = true;
   unsigned int problem = 0;
   unsigned int firstProblem = 0;
@@ -324,33 +339,34 @@ int main(int argv, char* args[]) {
         disassemble = true;
         quiet = true;
         reduce = true;
-      } else if (strcmp(args[i], "-d") == 0)
-        disassemble = true;
-      else if (strcmp(args[i], "-p") == 0)
-        printDisassemble = true;
-      else if (strcmp(args[i], "-s") == 0)
-        printSolutions = true;
-      else if (strcmp(args[i], "-r") == 0)
-        reduce = true;
-      else if (strcmp(args[i], "-R") == 0) {
-        checkRotations = true;
-        disassemble = true;
-      }
-      else if (strcmp(args[i], "-n") == 0)
-        newline = false;
-      else if (strcmp(args[i], "-x") == 0)
-        assemble = false;
-      else if (strcmp(args[i], "-o") == 0) {
+      } else if (strcmp(args[i], "--solver") == 0) {
+        if (i + 1 >= argv) {
+          usage();
+          return 2;
+        }
+        if (!solverTypeFromName(args[i+1], &solverType)) {
+          fprintf(stderr, "burrTxt: unknown solver '%s'\n", args[i+1]);
+          fprintf(stderr, "         use \"BurrTools Classic\", \"Andrew Crowell\", or \"BurrTools 2\"\n");
+          fprintf(stderr, "         (also: classic, crowell, bt2)\n");
+          return 2;
+        }
+        i++;
+      } else if (strcmp(args[i], "-o") == 0) {
+        if (i + 1 >= argv) {
+          usage();
+          return 2;
+        }
         if (strcmp(args[i+1],"all")==0)
           allProblems = true;
         else
           problem = atoi(args[i+1]);
         i++;
-      } else if (strcmp(args[i], "-q") == 0) {
-        quiet = true;
-        printDisassemble = false;
-        printSolutions = false;
       } else if (strcmp(args[i], "-a") == 0) {
+
+        if (i + 1 >= argv) {
+          usage();
+          return 2;
+        }
 
         ask = true;
         what = W_NUM_SOLUTIONS;
@@ -368,6 +384,48 @@ int main(int argv, char* args[]) {
         }
 
         i++;
+
+      } else if (args[i][0] == '-' && args[i][1] != '-' && args[i][1] != 0) {
+
+        for (int j = 1; args[i][j]; j++) {
+          switch (args[i][j]) {
+          case 'd':
+            disassemble = true;
+            break;
+          case 'p':
+            printDisassemble = true;
+            break;
+          case 's':
+            printSolutions = true;
+            break;
+          case 'r':
+            reduce = true;
+            break;
+          case 'R':
+            checkRotations = true;
+            disassemble = true;
+            break;
+          case 'n':
+            newline = false;
+            break;
+          case 'x':
+            assemble = false;
+            break;
+          case 'q':
+            quiet = true;
+            printDisassemble = false;
+            printSolutions = false;
+            break;
+          case 'o':
+          case 'a':
+            fprintf(stderr, "burrTxt: -%c cannot be clustered; give it as its own argument\n", args[i][j]);
+            return 2;
+          default:
+            fprintf(stderr, "burrTxt: unknown option -%c\n", args[i][j]);
+            usage();
+            return 2;
+          }
+        }
 
       } else
         filenumber = i;
@@ -461,7 +519,7 @@ int main(int argv, char* args[]) {
 
       problem_c * problem = p.getProblem(pr);
 
-      assembler_c *assm = p.getGridType()->findAssembler(*problem, jsonOutput);
+      assembler_c *assm = p.getGridType()->findAssembler(*problem, jsonOutput, solverType);
 
       switch (assm->createMatrix(false, false, false)) {
       case assembler_c::ERR_TOO_MANY_UNITS:
@@ -520,9 +578,12 @@ int main(int argv, char* args[]) {
 
       d = 0;
       if (disassemble)
-        d = new disassembler_0_c(*problem, checkRotations);
+        d = createDisassembler(*problem, checkRotations, solverType);
 
-      assm->assemble(&a);
+      if (solverType == SOLVER_BT2)
+        bt2Assemble(assm, &a, bt2ChooseAssemblerWorkers());
+      else
+        assm->assemble(&a);
 
       if (jsonOutput) {
         jsonStats.merge(a);
@@ -547,7 +608,7 @@ int main(int argv, char* args[]) {
 
       problem_c * problem = p.getProblem(pr);
 
-      d = new disassembler_0_c(*problem, checkRotations);
+      d = createDisassembler(*problem, checkRotations, solverType);
 
       for (unsigned int sol = 0; sol < problem->getNumberOfSavedSolutions(); sol++) {
 

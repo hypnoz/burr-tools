@@ -22,6 +22,7 @@
 #define __GRID_TYPE_H__
 
 #include "types.h"
+#include "solvertype.h"
 
 #include "bt_assert.h"
 
@@ -139,7 +140,8 @@ class gridType_c {
      * because we are not dependent on the gridtype this function is static
      * but it needs to know the puzzle
      */
-    static assembler_c * findAssembler(const problem_c & p, bool quiet = false);
+    static assembler_c * findAssembler(const problem_c & p, bool quiet = false,
+                                       solverType_e solver = SOLVER_CLASSIC);
 
   private:
 

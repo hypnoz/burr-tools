@@ -22,6 +22,7 @@
 #define __DISASSEMBLER_0_H__
 
 #include "disassembler_a.h"
+#include "bt_classic_solver.h"
 
 class separation_c;
 

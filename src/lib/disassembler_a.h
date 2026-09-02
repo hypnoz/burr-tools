@@ -23,6 +23,7 @@
 
 #include "disassembler.h"
 #include "movementanalysator.h"
+#include "solvertype.h"
 
 #include <atomic>
 #include <vector>
@@ -110,7 +111,8 @@ class disassembler_a_c : public disassembler_c {
      * The problem can not be changed, once you done that but
      * you can analyse many assemblies for disassembability
      */
-    disassembler_a_c(const problem_c & puz, bool enableRotations = false);
+    disassembler_a_c(const problem_c & puz, bool enableRotations = false,
+                     solverType_e solverType = SOLVER_CLASSIC);
     ~disassembler_a_c(void);
 
     /** enable or disable 90° rotation moves (brick grids only) */
@@ -118,6 +120,9 @@ class disassembler_a_c : public disassembler_c {
 
     /** abort an in-progress disassembly as soon as possible */
     virtual void stop(void) { abort.store(true, std::memory_order_release); }
+
+    virtual unsigned long long getRotationSearchUs(void) const;
+    virtual unsigned long long getLinearSearchUs(void) const;
 
     /**
      * Disassemble an assembly of the puzzle.

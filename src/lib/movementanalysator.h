@@ -21,6 +21,9 @@
 #ifndef __MOVEMENT_ANALYSATOR_H__
 #define __MOVEMENT_ANALYSATOR_H__
 
+#include "solvertype.h"
+
+#include <atomic>
 #include <vector>
 
 class problem_c;
@@ -28,7 +31,7 @@ class disassemblerNode_c;
 class movementCache_c;
 class assembly_c;
 class countingNodeHash;
-class rotationMoves_0_c;
+class rotationMoves_c;
 
 /**
  * this class is can do analysis of movements within a puzzle.
@@ -61,8 +64,13 @@ class movementAnalysator_c {
 
     bool checkRotations;
     bool bricksGrid;
-    rotationMoves_0_c * rotationMoves;
+    rotationMoves_c * rotationMoves;
     bool rotationsActive;
+    std::atomic<unsigned long long> rotationSearchUs;
+    std::atomic<unsigned long long> linearSearchUs;
+    unsigned long long searchPhaseStartUs;
+    bool searchTimingOpen;
+    bool searchPhaseLinear;
 
     /* these variables are used for the routine that looks
      * for the pieces to move find, checkmovement
@@ -75,6 +83,9 @@ class movementAnalysator_c {
     const std::vector<unsigned int> * pieces;
 
     void prepare(void);
+    void beginSearchPhase(bool linear);
+    void switchToRotationPhase(void);
+    void flushSearchPhase(void);
     bool checkmovement(unsigned int maxPieces, unsigned int nextstep);
     disassemblerNode_c * newNode(unsigned int amount);
     disassemblerNode_c * newNodeMerge(const disassemblerNode_c *n0, const disassemblerNode_c *n1);
@@ -86,10 +97,19 @@ class movementAnalysator_c {
      * This can not be changed, once you done that but you can analyse
      * many positions
      */
-    movementAnalysator_c(const problem_c & puz, bool enableRotations = false);
+    movementAnalysator_c(const problem_c & puz, bool enableRotations = false,
+                         solverType_e solverType = SOLVER_CLASSIC);
     ~movementAnalysator_c(void);
 
     void setCheckRotations(bool enable);
+
+    unsigned long long getRotationSearchUs(void) const {
+      return rotationSearchUs.load(std::memory_order_relaxed);
+    }
+
+    unsigned long long getLinearSearchUs(void) const {
+      return linearSearchUs.load(std::memory_order_relaxed);
+    }
 
     /* you use either the 2 functions below, or completeFind
      * the below functions return one possible movement after another and you can stop as soon

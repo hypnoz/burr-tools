@@ -13,15 +13,15 @@
 
 LStatusLine::LStatusLine(int x, int y, int w, int h) : layouter_c(x, y, w, h), colorModeIndex(0) {
 
+  weight(1, 0);
+  box(FL_FLAT_BOX);
+  color(FL_BACKGROUND_COLOR);
+
   text = new LFl_Box(0, 0, 1, 1);
-  text->box(FL_UP_BOX);
-  text->color(FL_BACKGROUND_COLOR);
+  text->box(FL_NO_BOX);
   text->align(FL_ALIGN_LEFT | FL_ALIGN_INSIDE);
   text->weight(1, 0);
-
-#ifdef __APPLE__
-  (new LFl_Box(1, 0))->setMinimumSize(20, 0);
-#endif
+  text->pitch(4);
 
   clear_visible_focus();
 

@@ -1008,6 +1008,22 @@ void voxelFrame_c::showSingleShape(const puzzle_c * puz, unsigned int shapeNum) 
   redraw();
 }
 
+void voxelFrame_c::showOwnedVoxel(voxel_c * vx, unsigned int colorIndex) {
+
+  hideMarker();
+  clearSpaces();
+  if (!vx)
+    return;
+
+  unsigned int num = addSpace(vx);
+  setSpaceColor(num, pieceColorR(colorIndex), pieceColorG(colorIndex), pieceColorB(colorIndex), 1);
+
+  trans = TranslateRoateScale;
+  _showCoordinateSystem = true;
+
+  redraw();
+}
+
 void voxelFrame_c::showMesh(Polyhedron * poly)
 {
   hideMarker();
@@ -1496,6 +1512,7 @@ void voxelFrame_c::updateDebugRotationCells(piecePositions_c *shifting) {
   unsigned int axis = 2;
   if (ax != 0) axis = 0;
   else if (ay != 0) axis = 1;
+  else if (az != 0) axis = 2;
   unsigned int sense = (ang < 0) ? 1 : 0;
   rotationRules_c::pivot_t pivot(
       (int)floor((px - 0.5) * 2.0 + 0.5),
@@ -1768,9 +1785,7 @@ void voxelFrame_c::updatePositionsOverlap(piecePositions_c *shifting) {
   voxel_c * inter = const_cast<voxel_c*>(shapes.rbegin()->shape);
   inter->setAll(voxel_c::VX_EMPTY);
 
-  bool involved[shapes.size()];
-  for (unsigned int p = 0; p < shapes.size(); p++)
-    involved[p] = false;
+  std::vector<char> involved(shapes.size(), 0);
 
   /* intersect each with everybody */
   for (unsigned int a = 0; a < shapes.size()-2; a++) {

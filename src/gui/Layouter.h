@@ -51,9 +51,12 @@
 #include <FL/Fl_Menu_Bar.H>
 #include <FL/Fl_Scroll.H>
 #include <FL/Fl_Progress.H>
+#include <FL/Fl_Text_Editor.H>
+#include <FL/Fl_Text_Buffer.H>
 
 #pragma GCC diagnostic pop
 
+#include <stdlib.h>
 #include <vector>
 
 class layoutable_c {
@@ -209,6 +212,8 @@ class layouter_c : public Fl_Group, public layoutable_c {
   void remove(Fl_Widget *w);
   void add(Fl_Widget &w);
   void add(Fl_Widget *w);
+
+  void invalidateMinSize(void);
 };
 
 /* now some basic widgets made layoutable */
@@ -413,6 +418,60 @@ class LFl_Multiline_Input : public Fl_Multiline_Input, public layoutable_c {
   }
 };
 
+/* Wrapping multiline editor with built-in scrollbars. value() matches Fl_Input. */
+class LFl_Text_Editor : public Fl_Text_Editor, public layoutable_c {
+
+  Fl_Text_Buffer *buf;
+  mutable char *textCache;
+  bool suppressCb;
+
+  static void modified_cb(int, int nInserted, int nDeleted, int, const char *, void *v) {
+    LFl_Text_Editor *e = (LFl_Text_Editor *)v;
+    if (e->suppressCb)
+      return;
+    if ((nInserted || nDeleted) && (e->when() & FL_WHEN_CHANGED))
+      e->do_callback();
+  }
+
+  public:
+
+  LFl_Text_Editor(int x = 0, int y = 0, int w = 1, int h = 1)
+    : Fl_Text_Editor(0, 0, 100, 100), layoutable_c(x, y, w, h),
+      buf(new Fl_Text_Buffer()), textCache(0), suppressCb(false) {
+    buffer(buf);
+    wrap_mode(WRAP_AT_BOUNDS, 0);
+    scrollbar_align(FL_ALIGN_RIGHT);
+    box(FL_DOWN_BOX);
+    textfont(FL_HELVETICA);
+    textsize(FL_NORMAL_SIZE);
+    buf->add_modify_callback(modified_cb, this);
+  }
+
+  ~LFl_Text_Editor() {
+    buf->remove_modify_callback(modified_cb, this);
+    buffer(0);
+    delete buf;
+    free(textCache);
+  }
+
+  const char *value() const {
+    free(textCache);
+    textCache = buf->text();
+    return textCache ? textCache : "";
+  }
+
+  void value(const char *s) {
+    suppressCb = true;
+    buf->text(s ? s : "");
+    suppressCb = false;
+  }
+
+  virtual void getMinSize(int *width, int *height) const {
+    *width = 30;
+    *height = 20;
+  }
+};
+
 class LFl_Output : public Fl_Output, public layoutable_c {
 
   public:
@@ -570,8 +629,6 @@ class LFl_Tabs : public Fl_Tabs, public layoutable_c {
 
     virtual void getMinSize(int *width, int *height) const;
     virtual void resize(int x, int y, int w, int h);
-
-  private:
 
     int tabStripHeight() const;
 };

@@ -24,6 +24,7 @@
 #include "Images.h"
 
 #include "Layouter.h"
+#include "../lib/solvethread.h"
 
 class VoxelEditGroup_c;
 class ChangeSize;
@@ -49,9 +50,12 @@ class LStatusLine;
 class LBlockListGroup_c;
 class LView3dGroup;
 class LFlatButton_c;
-class LFl_Multiline_Input;
+class LFl_Text_Editor;
 class LFl_Button;
 class statusWindow_c;
+class debugStatsPanel_c;
+class LFl_Tile;
+class voxel_c;
 
 class shapeHistory_c;
 class Fl_Tabs;
@@ -102,6 +106,10 @@ class mainWindow_c : public LFl_Double_Window {
   ButtonGroup_c *editMode;
 
   layouter_c *TabSolve;
+  layouter_c *TabDebug;
+  Fl_Group *solverPane;
+  debugStatsPanel_c *debugPanel;
+  solveStats_c lastSolveStats;
   Fl_Check_Button *SolveDisasm, *CheckRotations, *JustCount, *DropDisassemblies, *KeepMirrors, *KeepRotations, *CompleteRotations;
 
   FlatButton *BtnPrepare, *BtnStart, *BtnCont, *BtnStop, *BtnPlacement, *BtnStep, *BtnMovement;
@@ -125,13 +133,15 @@ class mainWindow_c : public LFl_Double_Window {
 
   LView3dGroup * View3D;
   layouter_c * view3DStack;
+  LFl_Tile * rightPane;
   statusWindow_c * detailsPanel;
 
   Fl_Group *MinSizeTools;
   Fl_Menu_Bar *MainMenu;
   LFlatButton_c *notesToggle;
   layouter_c *notesPanel;
-  LFl_Multiline_Input *notesInput;
+  LFl_Tile *contentTile;
+  LFl_Text_Editor *notesInput;
   LFl_Button *notesUpdate;
   LFl_Button *notesRevert;
   LStatusLine *StatusLine;
@@ -141,6 +151,7 @@ class mainWindow_c : public LFl_Double_Window {
 
   VoxelEditGroup_c *pieceEdit;
 
+  Fl_Choice * solverTypeChoice;
   Fl_Choice * sortMethod;
   Fl_Value_Input *solDrop, *solLimit;
 
@@ -162,6 +173,12 @@ class mainWindow_c : public LFl_Double_Window {
   void CreateShapeTab(void);
   void CreateProblemTab(void);
   void CreateSolveTab(void);
+  void CreateDebugTab(void);
+  void attachSolverPane(Fl_Group *tab);
+  void applyDebugTabVisibility(void);
+  void updateDebugStats(void);
+  void showDebugRightPane(void);
+  void hideDebugRightPane(void);
 
 
   bool is3DViewBig;
@@ -189,6 +206,7 @@ class mainWindow_c : public LFl_Double_Window {
   bool threadStopped(void);
 
   void updateInterface(void);
+  void selectEntitiesTab(bool resetZoom = false);
   void updateUndoRedoButtons(void);
   void recordShapeAction(int kind);
   void applyHistoryRestore(unsigned int selected);
@@ -200,6 +218,7 @@ public:
 
   int handle(int event);
 
+  using LFl_Double_Window::show;
   void show(int argn, char ** argv);
 
   // overwrite hide to check for changes in all possible exit situations
@@ -262,6 +281,7 @@ public:
   void cb_PiecesClicked(void);
 
   void cb_TransformPiece(void);
+  void cb_TransformPreview(voxel_c * preview, unsigned int shapeNum);
   void cb_pieceEdit(VoxelEditGroup_c* o);
   void cb_EditChoice(void);
   void cb_EditSym(int onoff, int value);
@@ -302,6 +322,8 @@ public:
   void cb_Quit(void);
   void cb_About(void);
   void cb_Tutorial(void);
+  void cb_SolverTypeHelp(void);
+  void cb_SortByHelp(void);
   void cb_Help(void);
   void cb_Config(void);
   void cb_ToggleNotes(void);

@@ -22,6 +22,7 @@
 
 #include "assembler_0.h"
 #include "assembler_1.h"
+#include "assembler_bt2.h"
 #include "movementcache_0.h"
 #include "movementcache_1.h"
 #include "voxel_0.h"
@@ -232,8 +233,22 @@ unsigned int gridType_c::getCapabilities(void) const
   }
 }
 
-assembler_c * gridType_c::findAssembler(const problem_c & p, bool quiet)
+assembler_c * gridType_c::findAssembler(const problem_c & p, bool quiet, solverType_e solver)
 {
+  if (solver == SOLVER_BT2) {
+    if (assembler_bt2_c::canHandle(p)) {
+      if (!quiet)
+        fprintf(stderr, "using assembler bt2 (dancing cells)\n");
+      return new assembler_bt2_c(p);
+    }
+    if (assembler_1_c::canHandle(p)) {
+      if (!quiet)
+        fprintf(stderr, "using assembler 1 (serial fallback)\n");
+      return new assembler_1_c(p);
+    }
+    return 0;
+  }
+
   if (assembler_0_c::canHandle(p)) {
     if (!quiet)
       fprintf(stderr, "using assembler 0\n");

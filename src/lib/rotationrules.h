@@ -85,6 +85,15 @@ public:
                              unsigned int sense) const;
 
   /**
+   * True if sandwich or perp-plane tests reject this axis for the moving
+   * body. Independent of pivot; Fortran SimpleRot uses this to skip all
+   * pivots on a blocked axis.
+   */
+  bool axisBlocked(const std::vector<cell_t> & occupied,
+                   const std::vector<cell_t> & startCells,
+                   unsigned int axis) const;
+
+  /**
    * Collect cells useful for Debug Rotations visualisation of one candidate.
    *
  * @param outBlocking    static cells that currently violate arc-sweep,

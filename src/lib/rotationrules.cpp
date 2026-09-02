@@ -703,6 +703,21 @@ bool rotationRules_c::allowRotation(const std::vector<cell_t> & occupied,
   return true;
 }
 
+bool rotationRules_c::axisBlocked(const std::vector<cell_t> & occupied,
+                                  const std::vector<cell_t> & startCells,
+                                  unsigned int axis) const {
+
+  cellSet occ;
+  for (unsigned int i = 0; i < occupied.size(); i++)
+    occ.insert(occupied[i]);
+
+  if (!inPlanePinchClear(occ, startCells, axis, 0))
+    return true;
+  if (!perpPlaneClear(occ, startCells, axis, 0))
+    return true;
+  return false;
+}
+
 void rotationRules_c::collectDebugConflictCells(
     const std::vector<cell_t> & occupied,
     const std::vector<cell_t> & startCells,

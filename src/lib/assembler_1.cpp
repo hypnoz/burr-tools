@@ -1044,14 +1044,14 @@ assembly_c * assembler_1_c::getAssembly(void) {
   /* fill the array with 0xff, so that we can distinguish between
    * placed and unplaced pieces
    */
-  unsigned int piece[rows.size()];
-  unsigned char tran[rows.size()];
-  int x[rows.size()];
-  int y[rows.size()];
-  int z[rows.size()];
+  std::vector<unsigned int> piece(rows.size());
+  std::vector<unsigned char> tran(rows.size());
+  std::vector<int> x(rows.size());
+  std::vector<int> y(rows.size());
+  std::vector<int> z(rows.size());
 
   for (unsigned int i = 0; i < rows.size(); i++)
-    getPieceInformation(rows[i], piece+i, tran+i, x+i, y+i, z+i);
+    getPieceInformation(rows[i], &piece[i], &tran[i], &x[i], &y[i], &z[i]);
 
   for (unsigned int pc = 0; pc < problem.getNumberOfParts(); pc++) {
     unsigned int placed = 0;

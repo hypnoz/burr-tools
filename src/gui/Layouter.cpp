@@ -353,6 +353,23 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
           dW += take;
         }
       }
+
+      /* Floors can still leave us too wide (tabs prefer a large size).
+       * Keep shrinking by priority so children stay inside the parent. */
+      for (int prio = 0; prio <= 255 && dW < 0; prio++) {
+        for (unsigned int x = 0; x < max_x && dW < 0; x++) {
+          if (prioX[x] != prio)
+            continue;
+          int can = (*widths)[x] - 1;
+          if (can <= 0)
+            continue;
+          int take = can;
+          if (take > -dW)
+            take = -dW;
+          (*widths)[x] -= take;
+          dW += take;
+        }
+      }
     }
 
     if (dH < 0 && max_y > 0) {
@@ -392,6 +409,23 @@ void layouter_c::calcLayout(int task, std::vector<int> *widths, std::vector<int>
           dH += take;
         }
       }
+
+      /* Same for height: don't overflow the window. Low-priority rows
+       * (e.g. the notes text) vanish first; button rows stay longest. */
+      for (int prio = 0; prio <= 255 && dH < 0; prio++) {
+        for (unsigned int y = 0; y < max_y && dH < 0; y++) {
+          if (prioY[y] != prio)
+            continue;
+          int can = (*heights)[y] - 1;
+          if (can <= 0)
+            continue;
+          int take = can;
+          if (take > -dH)
+            take = -dH;
+          (*heights)[y] -= take;
+          dH += take;
+        }
+      }
     }
   }
 }
@@ -406,16 +440,6 @@ void layouter_c::resize(int xt, int yt, int w, int h) {
   std::vector<int> widgetH;
 
   calcLayout(1, &widths, &heights, &widgetW, &widgetH, w, h);
-
-  /* check, if we need to make our widget bigger to accommodate all subwidgets */
-  int wi = 0, hi = 0;
-  for (unsigned int i = 0; i < widths.size(); i++)
-    wi += widths[i];
-  for (unsigned int i = 0; i < heights.size(); i++)
-    hi += heights[i];
-
-//  if (wi > w) w = wi;
-//  if (hi > h) h = hi;
 
   Fl_Widget::resize(xt, yt, w, h);
 
@@ -561,6 +585,16 @@ void layouter_c::add(Fl_Widget *w) {
   Fl_Group::add(w);
 }
 
+void layouter_c::invalidateMinSize(void) {
+  minsizeValid = false;
+  Fl_Widget *const * widgets = array();
+  for (int i = 0; i < children(); i++) {
+    layouter_c * childLay = dynamic_cast<layouter_c*>(widgets[i]);
+    if (childLay)
+      childLay->invalidateMinSize();
+  }
+}
+
 
 int LFl_Tabs::tabStripHeight() const {
 
@@ -613,6 +647,10 @@ void LFl_Tabs::resize(int x, int y, int w, int h) {
 
     unsigned int p = widget->getPitch();
 
+    layouter_c * lay = dynamic_cast<layouter_c*>(_widgets[i]);
+    if (lay)
+      lay->invalidateMinSize();
+
     _widgets[i]->resize(x+p, y+tabH+p, w-2*p, h-tabH-2*p);
   }
 }
@@ -620,22 +658,31 @@ void LFl_Tabs::resize(int x, int y, int w, int h) {
 
 void LFl_Scroll::getMinSize(int *width, int *height) const {
 
-  lay->getMinSize(width, height);
+  /* Report the viewport size, not the content size. Using the full table
+   * width here made the scroll widget wider than the pane, so the vertical
+   * scrollbar (drawn on the right edge) was clipped away. */
+  int sb = scrollbar_size();
+  if (sb < 1)
+    sb = Fl::scrollbar_size();
+  if (sb < 12)
+    sb = 12;
 
   switch(type()) {
-    case Fl_Scroll::HORIZONTAL_ALWAYS: // - Horizontal scrollbar always on, vertical always off.
-    case Fl_Scroll::HORIZONTAL:// - Only a horizontal scrollbar.
-      *width = 30;
-      *height += hscrollbar.h();
+    case Fl_Scroll::HORIZONTAL_ALWAYS:
+    case Fl_Scroll::HORIZONTAL:
+      *width = 40;
+      *height = 30 + sb;
       break;
-    case Fl_Scroll::VERTICAL_ALWAYS: // - Vertical scrollbar always on, horizontal always off.
-    case Fl_Scroll::VERTICAL:// - Only a vertical scrollbar.
-      *height = 30;
-      *width += scrollbar.w();
+    case Fl_Scroll::VERTICAL_ALWAYS:
+    case Fl_Scroll::VERTICAL:
+      *width = 40 + sb;
+      *height = 56;
       break;
-    case Fl_Scroll::BOTH_ALWAYS: // - Both always on.
-    case Fl_Scroll::BOTH: // - The default is both scrollbars.
-      *width = *height = 30;
+    case Fl_Scroll::BOTH_ALWAYS:
+    case Fl_Scroll::BOTH:
+    default:
+      *width = 40 + sb;
+      *height = 56;
       break;
   }
 }

@@ -53,6 +53,7 @@ public:
   bool reverseScrollZoom(void) { return i_reverseScrollZoom; }
 
   bool debugRotations(void) { return i_debugRotations; }
+  bool debugStatistics(void) { return i_debugStatistics; }
 
   int windowPosX(void) { return i_window_pos_x; }
   int windowPosY(void) { return i_window_pos_y; }
@@ -102,6 +103,7 @@ private:
   bool i_rotationMethod;
   bool i_reverseScrollZoom;
   bool i_debugRotations;
+  bool i_debugStatistics;
 
   int i_window_pos_x;
   int i_window_pos_y;

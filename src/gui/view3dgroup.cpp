@@ -31,6 +31,8 @@
 
 #include <math.h>
 
+const double LView3dGroup::defaultZoom = 3.2;
+
 // some tool widgets, that may be swapped out later into another file
 
 static void cb_View3dGroupSlider_stub(Fl_Widget* o, void* /*v*/) { ((LView3dGroup*)(o->parent()))->cb_slider(); }
@@ -60,7 +62,7 @@ LView3dGroup::LView3dGroup(int x, int y, int w, int h) : Fl_Group(0, 0, 50, 50),
   slider->maximum(6);
   slider->minimum(0);
   slider->step(0.01);
-  slider->value(2);
+  slider->value(defaultZoom);
   slider->callback(cb_View3dGroupSlider_stub);
   slider->clear_visible_focus();
 
@@ -71,8 +73,7 @@ LView3dGroup::LView3dGroup(int x, int y, int w, int h) : Fl_Group(0, 0, 50, 50),
 }
 
 void LView3dGroup::goHome(void) {
-  slider->value(2);
-  cb_slider();
+  resetZoomToDefault();
   View3D->resetViewRotation();
   redraw();
 }

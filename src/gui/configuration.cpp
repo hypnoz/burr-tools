@@ -136,6 +136,9 @@ configuration_c::configuration_c(void) {
   first_data = 0;
 
   /* Registered first so it appears last in the Settings dialog. */
+  CNF_BOOL_D("debugstatistics",   &i_debugStatistics, "Enable Debug Statistics",
+             "When enabled, a Debug tab appears next to Solver. It keeps the solver controls on the left and replaces the 3D view with live and last-run performance statistics, including whether assembly search (DLX) or disassembly is the limiter.",
+             "false");
   CNF_BOOL_D("debugrotations",    &i_debugRotations, "Debug Rotations",
              "When Check Rotations is enabled on the Solver tab, and viewing the disassembly animation if there is a rotation move then show all the voxels which would be considered a collision to block that rotation. Only really useful for debugging rotation rules to update the code, isn't useful to help design puzzles.",
              "false");
@@ -156,7 +159,7 @@ configuration_c::configuration_c(void) {
              "true");
   CNF_BOOL_D("reversescrollzoom", &i_reverseScrollZoom, "Reverse scroll zoom direction",
              "Reverse the direction of the preview zoom when the mouse wheel is used.",
-             "false");
+             "true");
   CNF_BOOL("rubberband",          &i_use_rubberband, "false");
   CNF_INT("windowposx",           &i_window_pos_x, "30");
   CNF_INT("windowposy",           &i_window_pos_y, "30");

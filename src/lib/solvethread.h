@@ -25,13 +25,16 @@
 #include "disassembler.h"
 #include "bt_assert.h"
 #include "thread.h"
+#include "solvertype.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <queue>
 #include <thread>
 #include <time.h>
+#include <vector>
 
 class problem_c;
 class assembly_c;
@@ -43,10 +46,44 @@ struct disasmTask_c {
   unsigned long solutionNumber;
 };
 
-/* this class will handle the solving of one problem of the puzzle, it can also
- * be used to continue an already started solution, so that you can save you results
- * and continue later on
- */
+/** Snapshot of solver timing and counts for the Debug statistics pane. */
+struct solveStats_c {
+
+  enum Status {
+    ST_IDLE,
+    ST_RUNNING,
+    ST_PAUSED,
+    ST_FINISHED,
+    ST_ERROR
+  };
+
+  bool hasData;
+  Status status;
+  solverType_e solverType;
+  bool disassemblyEnabled;
+  bool rotationsEnabled;
+  unsigned int hardwareThreads;
+  unsigned int assemblerThreads;
+  unsigned int disasmWorkers;
+  unsigned long assembliesFound;
+  unsigned long solutionsFound;
+  unsigned long inseparable;
+  unsigned long dlxIterations;
+  float assemblyProgress;
+  unsigned int pending;
+  unsigned int peakPending;
+  unsigned int disasmCompleted;
+  unsigned long long elapsedMs;
+  unsigned long long prepareMs;
+  unsigned long long reduceMs;
+  unsigned long long assemblyMs;
+  unsigned long long disasmWorkMs;
+  unsigned long long linearSearchMs;
+  unsigned long long rotationSearchMs;
+  unsigned long long drainMs;
+  float avgDisasmSeconds;
+};
+
 class solveThread_c : public assembler_cb, public thread_c {
 
   public:
@@ -105,12 +142,25 @@ class solveThread_c : public assembler_cb, public thread_c {
     bool disassemblyEnabled(void) const { return (parameters & PAR_DISASSM) != 0; }
     unsigned int getDisassemblyPending(void) const { return disasmPending.load(std::memory_order_relaxed); }
     unsigned int getDisassemblyCompleted(void) const { return disasmCompleted.load(std::memory_order_relaxed); }
+    unsigned int getDisassemblyWorkerCount(void) const { return disasmWorkerCount.load(std::memory_order_relaxed); }
     float getAverageDisassemblySeconds(void) const {
       unsigned int n = disasmCompleted.load(std::memory_order_relaxed);
       if (n == 0)
         return 0;
       return (float)disasmMsTotal.load(std::memory_order_relaxed) / 1000.0f / (float)n;
     }
+
+    /**
+     * Overall solve progress in [0, 1].
+     * assemblyFraction is the covering-search (DLX) fraction from the assembler.
+     * When disassembly is enabled this also includes take-apart work so the
+     * value does not jump to 100% while the disassembly queue is still draining.
+     * While a take-apart is running, the value also creeps forward on a
+     * time schedule (capped at 95%) so the bar keeps moving.
+     */
+    float getProgress(float assemblyFraction) const;
+
+    solveStats_c getStats(void) const;
 
   private:
 
@@ -135,6 +185,7 @@ class solveThread_c : public assembler_cb, public thread_c {
   private:
 
     int sortMethod;
+    solverType_e solverType;
 
   public:
 
@@ -146,6 +197,9 @@ class solveThread_c : public assembler_cb, public thread_c {
     };
 
     void setSortMethod(int sort) { sortMethod = sort; }
+
+    void setSolverType(solverType_e type) { solverType = type; }
+    solverType_e getSolverType(void) const { return solverType; }
 
   private:
 
@@ -183,26 +237,44 @@ class solveThread_c : public assembler_cb, public thread_c {
     bool return_after_prep;  // sometimes it is useful to only prepare and return,
                              // if this flag is set, the program will return
 
-    disassembler_c * disassm;
+    std::vector<disassembler_c *> disassemblers;
     assembler_c * assm;
+    unsigned int assemblerThreadCount;
+
+    std::mutex assemblyCallbackMutex;
 
     /* asynchronous disassembly pipeline (when PAR_DISASSM is set) */
-    std::thread disasmWorker;
+    std::vector<std::thread> disasmWorkers;
     std::mutex disasmQueueMutex;
     std::condition_variable disasmQueueCv;
     std::queue<disasmTask_c> disasmQueue;
     std::atomic<bool> disasmWorkerStop;
+    std::atomic<unsigned int> disasmWorkerCount;
     std::atomic<unsigned int> disasmPending;
     std::atomic<unsigned int> disasmCompleted;
     std::atomic<unsigned long long> disasmMsTotal;
+    std::atomic<unsigned int> disasmPeakPending;
+    std::atomic<unsigned long> disasmInseparable;
+    std::atomic<unsigned long long> prepareMs;
+    std::atomic<unsigned long long> reduceMs;
+    std::atomic<unsigned long long> assemblyMs;
+    std::atomic<unsigned long long> drainMs;
+    std::chrono::steady_clock::time_point statsOrigin;
+    std::chrono::steady_clock::time_point phaseOrigin;
+    enum { PHASE_NONE, PHASE_PREPARE, PHASE_REDUCE, PHASE_ASSEMBLE, PHASE_DRAIN } statsPhase;
+
+    /* GUI-thread-only state for the disassembly progress-bar creep. */
+    mutable bool disasmCreepActive;
+    mutable float disasmCreepShown;
+    mutable std::chrono::steady_clock::time_point disasmCreepTick;
 
     void startDisasmWorker(void);
     void stopDisasmWorker(void);
     void cancelDisassemblyWork(void);
-    void disasmWorkerRun(void);
+    void disasmWorkerRun(disassembler_c * workerDisassm);
     void enqueueDisassembly(assembly_c * a);
     void flushDisassemblyQueue(void);
-    void processDisassembly(const disasmTask_c & task, int solutionAction);
+    void processDisassembly(const disasmTask_c & task, int solutionAction, disassembler_c * workerDisassm);
     unsigned int findInsertIndexByMoves(unsigned int lev) const;
     unsigned int findInsertIndexByRotations(unsigned int lev) const;
     void trimSavedSolutions(int solutionAction);

@@ -50,6 +50,8 @@ class statusWindow_c : public layouter_c {
     void setCallbacks(Fl_Callback * onClose, Fl_Callback * onChanged, void * user);
     void populate(puzzle_c * p);
 
+    virtual void getMinSize(int *width, int *height) const;
+
     void cb_removeSelected(void);
     void cb_selectHoles(void);
     void cb_selectIdenticalShapes(void);

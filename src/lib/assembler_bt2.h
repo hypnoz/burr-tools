@@ -18,11 +18,12 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
-#ifndef __DL_ASSEMBLER_H__
-#define __DL_ASSEMBLER_H__
+#ifndef __BT2_ASSEMBLER_H__
+#define __BT2_ASSEMBLER_H__
 
 #include "assembler.h"
-#include "bt_classic_solver.h"
+#include "bt2_solver.h"
+#include "bt2_dancingcells.h"
 
 #include <atomic>
 #include <vector>
@@ -33,15 +34,11 @@ class gridType_c;
 class mirrorInfo_c;
 
 /**
- * This is an assembler class.
- *
- * It is more or less identical to Don Knuths idea. Some changes have been done though
- * to provide for holes. This class can not handle ranges or multi-pieces.
- *
- * All involved pieces must be there exactly one time. But in that case it is a bit
- * faster than assembler_1.
+ * BurrTools 2 assembler: same matrix as Classic assembler_0_c, but search
+ * is Knuth dancing cells with MCC-style split / work stealing.
+ * Classic and Crowell must keep using assembler_0_c.
  */
-class assembler_0_c : public assembler_c {
+class assembler_bt2_c : public assembler_c {
 
 protected:
 
@@ -209,6 +206,20 @@ private:
 
   unsigned int clumpify(void);
 
+  bt2Cells_c cells;
+  bool cellsBuilt;
+  void buildCells(void);
+  void solutionFromRowNodes(const unsigned int * rowNodes, unsigned int n);
+  static void cellsSolutionThunk(void * user, const unsigned int * rowIds, unsigned int n);
+
+  /* Clones share avoidTransformedMirror; only the owner deletes it. */
+  bool ownAvoidTransformedMirror;
+
+  /* Other assembler_bt2_c workers searching disjoint split branches. */
+  std::vector<assembler_bt2_c *> progressPeers;
+
+  float finishedLocal(void) const;
+
 protected:
 
   /* as this is only a back end doing the processing on the matrix, there needs to
@@ -273,13 +284,21 @@ protected:
 
 public:
 
-  assembler_0_c(const problem_c & problem);
-  ~assembler_0_c(void);
+  assembler_bt2_c(const problem_c & problem);
+  ~assembler_bt2_c(void);
 
   /* functions that are overloaded from assembler_c, for comments see there */
   errState createMatrix(bool keepMirror, bool keepRotations, bool complete);
   void applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool complete);
   void assemble(assembler_cb * callback);
+  assembler_c * clonePrepared(void);
+  assembler_c * splitSearch(void);
+  bool searchFinished(void) const;
+  unsigned int remainingSearchWork(void) const;
+  void assembleLimited(assembler_cb * callback, unsigned int iterationBudget);
+  void addIterations(unsigned long n);
+  void addProgressPeer(assembler_c * peer);
+  void clearProgressPeers(void);
   int getErrorsParam(void) { return errorsParam; }
   virtual float getFinished(void) const;
   virtual void stop(void);
@@ -303,8 +322,8 @@ public:
 private:
 
   // no copying and assigning
-  assembler_0_c(const assembler_0_c&);
-  void operator=(const assembler_0_c&);
+  assembler_bt2_c(const assembler_bt2_c&);
+  void operator=(const assembler_bt2_c&);
 };
 
 #endif

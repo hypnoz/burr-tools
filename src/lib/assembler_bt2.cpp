@@ -18,7 +18,7 @@
  * along with this program; if not, write to the Free Software
  * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
  */
-#include "assembler_0.h"
+#include "assembler_bt2.h"
 
 #include "bt_assert.h"
 #include "problem.h"
@@ -39,7 +39,7 @@
 #define snprintf _snprintf
 #endif
 
-#define ASSEMBLER_VERSION "1.4"
+#define ASSEMBLER_VERSION "2.0-bt2"
 
 /* print out the current matrix */
 static void printMatrix(
@@ -170,7 +170,7 @@ static void printMatrix(
 
 
 
-void assembler_0_c::GenerateFirstRow(void) {
+void assembler_bt2_c::GenerateFirstRow(void) {
 
   for (unsigned int i = 0; i < varivoxelStart; i++) {
     right.push_back(i+1);
@@ -200,7 +200,7 @@ void assembler_0_c::GenerateFirstRow(void) {
   right[varivoxelEnd] = varivoxelStart;
 }
 
-int assembler_0_c::AddPieceNode(unsigned int piece, unsigned int rot, unsigned int x, unsigned int y, unsigned int z) {
+int assembler_bt2_c::AddPieceNode(unsigned int piece, unsigned int rot, unsigned int x, unsigned int y, unsigned int z) {
   unsigned long piecenode = left.size();
 
   left.push_back(piecenode);
@@ -219,7 +219,7 @@ int assembler_0_c::AddPieceNode(unsigned int piece, unsigned int rot, unsigned i
   return piecenode;
 }
 
-void assembler_0_c::getPieceInformation(unsigned int node, unsigned char *tran, int *x, int *y, int *z, unsigned int *piece) const {
+void assembler_bt2_c::getPieceInformation(unsigned int node, unsigned char *tran, int *x, int *y, int *z, unsigned int *piece) const {
 
   for (int i = piecePositions.size()-1; i >= 0; i--)
     if (piecePositions[i].row <= node) {
@@ -241,7 +241,7 @@ void assembler_0_c::getPieceInformation(unsigned int node, unsigned char *tran, 
  *
  * returns the number of columns that were removed
  */
-unsigned int assembler_0_c::clumpify(void) {
+unsigned int assembler_bt2_c::clumpify(void) {
 
   unsigned int col = right[0];
   unsigned int removed = 0;
@@ -316,7 +316,7 @@ unsigned int assembler_0_c::clumpify(void) {
   return removed;
 }
 
-void assembler_0_c::AddVoxelNode(unsigned int col, unsigned int piecenode) {
+void assembler_bt2_c::AddVoxelNode(unsigned int col, unsigned int piecenode) {
   unsigned long newnode = left.size();
 
   right.push_back(piecenode);
@@ -333,22 +333,63 @@ void assembler_0_c::AddVoxelNode(unsigned int col, unsigned int piecenode) {
   colCount[col]++;
 }
 
-assembler_0_c::assembler_0_c(const problem_c & prob) :
+assembler_bt2_c::assembler_bt2_c(const problem_c & prob) :
   assembler_c(),
   problem(prob),
   abort(false),
   running(false),
   pos(0), rows(0), columns(0),
   reducePiece(0),
-  avoidTransformedAssemblies(0), rotationFilterActive(0), avoidTransformedMirror(0)
+  avoidTransformedAssemblies(0), rotationFilterActive(0), avoidTransformedMirror(0),
+  cellsBuilt(false),
+  ownAvoidTransformedMirror(true)
 {
 }
 
-assembler_0_c::~assembler_0_c() {
+assembler_bt2_c::assembler_bt2_c(const assembler_bt2_c & src) :
+  assembler_c(),
+  problem(src.problem),
+  left(src.left),
+  right(src.right),
+  upDown(src.upDown),
+  colCount(src.colCount),
+  abort(false),
+  running(false),
+  pos(0),
+  rows(0),
+  columns(0),
+  errorsState(src.errorsState),
+  errorsParam(src.errorsParam),
+  iterations(0),
+  holes(src.holes),
+  varivoxelStart(src.varivoxelStart),
+  varivoxelEnd(src.varivoxelEnd),
+  piecenumber(src.piecenumber),
+  asm_bc(0),
+  reducePiece(src.reducePiece),
+  piecePositions(src.piecePositions),
+  avoidTransformedAssemblies(src.avoidTransformedAssemblies),
+  rotationFilterActive(src.rotationFilterActive),
+  avoidTransformedPivot(src.avoidTransformedPivot),
+  avoidTransformedMirror(src.avoidTransformedMirror),
+  complete(src.complete),
+  debug(false),
+  debug_loops(0),
+  cells(src.cells),
+  cellsBuilt(src.cellsBuilt),
+  ownAvoidTransformedMirror(false)
+{
+  rows = new unsigned int[piecenumber];
+  columns = new unsigned int[piecenumber];
+  memset(rows, 0, piecenumber * sizeof(unsigned int));
+  memset(columns, 0, piecenumber * sizeof(unsigned int));
+}
+
+assembler_bt2_c::~assembler_bt2_c() {
   if (rows) delete [] rows;
   if (columns) delete [] columns;
 
-  if (avoidTransformedMirror)
+  if (ownAvoidTransformedMirror && avoidTransformedMirror)
     delete avoidTransformedMirror;
 }
 
@@ -369,7 +410,7 @@ static voxel_c * addToCache(voxel_c * cache[], unsigned int * fill, voxel_c * pi
 }
 
 
-bool assembler_0_c::canPlace(const voxel_c * piece, int x, int y, int z) const {
+bool assembler_bt2_c::canPlace(const voxel_c * piece, int x, int y, int z) const {
 
   if (!piece->onGrid(x, y, z))
     return false;
@@ -415,7 +456,7 @@ bool assembler_0_c::canPlace(const voxel_c * piece, int x, int y, int z) const {
  * negative result show there is something wrong: the place -result has not
  * possible position inside the result
  */
-int assembler_0_c::prepare(void) {
+int assembler_bt2_c::prepare(void) {
 
   const voxel_c * result = getResultShape(problem);
 
@@ -686,7 +727,7 @@ int assembler_0_c::prepare(void) {
 
 
 
-assembler_0_c::errState assembler_0_c::createMatrix(bool keepMirror, bool keepRotations, bool comp) {
+assembler_bt2_c::errState assembler_bt2_c::createMatrix(bool keepMirror, bool keepRotations, bool comp) {
 
   bt_assert(problem.resultValid());
 
@@ -758,7 +799,7 @@ assembler_0_c::errState assembler_0_c::createMatrix(bool keepMirror, bool keepRo
   return errorsState;
 }
 
-void assembler_0_c::applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool comp) {
+void assembler_bt2_c::applySolutionFilterFlags(bool keepMirror, bool keepRotations, bool comp) {
 
   complete = comp;
 
@@ -774,7 +815,7 @@ void assembler_0_c::applySolutionFilterFlags(bool keepMirror, bool keepRotations
 }
 
 /* remove column from array, and also all the rows, where the column is one */
-void assembler_0_c::cover(unsigned int col)
+void assembler_bt2_c::cover(unsigned int col)
 {
   {
     unsigned int l = left[col];
@@ -859,7 +900,7 @@ void assembler_0_c::cover(unsigned int col)
 
 }
 
-void assembler_0_c::uncover(unsigned int col) {
+void assembler_bt2_c::uncover(unsigned int col) {
 
 #if 0
   // the assembly code below is ca 20% faster than the gcc code
@@ -938,12 +979,12 @@ void assembler_0_c::uncover(unsigned int col) {
 /* remove all the columns from the matrix in which the given
  * row contains ones
  */
-void assembler_0_c::cover_row(unsigned int r) {
+void assembler_bt2_c::cover_row(unsigned int r) {
   for (unsigned int j = right[r]; j != r; j = right[j])
     cover(colCount[j]);
 }
 
-bool assembler_0_c::try_cover_row(unsigned int r, unsigned int * columns) {
+bool assembler_bt2_c::try_cover_row(unsigned int r, unsigned int * columns) {
 
   memset(columns, 0, varivoxelEnd * sizeof(unsigned int));
 
@@ -970,12 +1011,12 @@ bool assembler_0_c::try_cover_row(unsigned int r, unsigned int * columns) {
   return true;
 }
 
-void assembler_0_c::uncover_row(unsigned int r) {
+void assembler_bt2_c::uncover_row(unsigned int r) {
   for (unsigned int j = left[r]; j != r; j = left[j])
     uncover(colCount[j]);
 }
 
-void assembler_0_c::remove_row(unsigned int r) {
+void assembler_bt2_c::remove_row(unsigned int r) {
   unsigned int j = r;
   do {
     unsigned int u, d;
@@ -992,7 +1033,7 @@ void assembler_0_c::remove_row(unsigned int r) {
   } while (j != r);
 }
 
-void assembler_0_c::remove_column(unsigned int c) {
+void assembler_bt2_c::remove_column(unsigned int c) {
   unsigned int j = c;
   do {
     right[left[j]] = right[j];
@@ -1002,7 +1043,7 @@ void assembler_0_c::remove_column(unsigned int c) {
   } while (j != c);
 }
 
-void assembler_0_c::reinsert_row(unsigned int r) {
+void assembler_bt2_c::reinsert_row(unsigned int r) {
   unsigned int j = r;
   do {
     up(down(j)) = j;
@@ -1014,7 +1055,7 @@ void assembler_0_c::reinsert_row(unsigned int r) {
   } while (j != r);
 }
 
-bool assembler_0_c::checkmatrix(void) {
+bool assembler_bt2_c::checkmatrix(void) {
 
   /* check the number of holes, if they are larger than allowed return */
   unsigned int count = holes;
@@ -1028,7 +1069,7 @@ bool assembler_0_c::checkmatrix(void) {
   return false;
 }
 
-void assembler_0_c::reduce(void) {
+void assembler_bt2_c::reduce(void) {
 
   /* this array is used in several occasions, where we need to
    * keep some information for all columns
@@ -1193,7 +1234,46 @@ void assembler_0_c::reduce(void) {
   fprintf(stderr, "removed %i rows and %i columns\n", removed, remCol);
 }
 
-assembly_c * assembler_0_c::getAssembly(void) {
+assembly_c * assembler_bt2_c::getAssembly(void) {
+
+  if (cellsBuilt) {
+    const std::vector<unsigned int> & rowIds = cells.currentRowIds();
+    assembly_c * assembly = new assembly_c(problem.getPuzzle().getGridType());
+
+    unsigned int * pieces = new unsigned int[getPiecenumber()];
+    unsigned char * trans = new unsigned char[getPiecenumber()];
+    int * xs = new int[getPiecenumber()];
+    int * ys = new int[getPiecenumber()];
+    int * zs = new int[getPiecenumber()];
+    memset(pieces, 0xff, sizeof(unsigned int) * getPiecenumber());
+
+    for (unsigned int i = 0; i < rowIds.size(); i++) {
+      unsigned char tran;
+      int x, y, z;
+      unsigned int piece;
+      getPieceInformation(rowIds[i], &tran, &x, &y, &z, &piece);
+      if (piece < getPiecenumber()) {
+        pieces[piece] = i;
+        trans[piece] = tran;
+        xs[piece] = x;
+        ys[piece] = y;
+        zs[piece] = z;
+      }
+    }
+
+    for (unsigned int i = 0; i < getPiecenumber(); i++)
+      if (pieces[i] == 0xffffffffu)
+        assembly->addNonPlacement();
+      else
+        assembly->addPlacement(trans[i], xs[i], ys[i], zs[i]);
+
+    delete [] pieces;
+    delete [] trans;
+    delete [] xs;
+    delete [] ys;
+    delete [] zs;
+    return assembly;
+  }
 
   assembly_c * assembly = new assembly_c(problem.getPuzzle().getGridType());
 
@@ -1250,7 +1330,7 @@ assembly_c * assembler_0_c::getAssembly(void) {
   return assembly;
 }
 
-void assembler_0_c::checkForTransformedAssemblies(unsigned int pivot, mirrorInfo_c * mir) {
+void assembler_bt2_c::checkForTransformedAssemblies(unsigned int pivot, mirrorInfo_c * mir) {
   avoidTransformedAssemblies = true;
   rotationFilterActive = true;
   avoidTransformedPivot = pivot;
@@ -1259,7 +1339,7 @@ void assembler_0_c::checkForTransformedAssemblies(unsigned int pivot, mirrorInfo
 
 /* this function handles the assemblies found by the assembler engine
  */
-void assembler_0_c::solution(void) {
+void assembler_bt2_c::solution(void) {
 
   if (getCallback()) {
 
@@ -1276,7 +1356,7 @@ void assembler_0_c::solution(void) {
 /* to understand this function you need to first completely understand the
  * dancing link algorithm.
  */
-void assembler_0_c::iterativeMultiSearch(void) {
+void assembler_bt2_c::iterativeMultiSearch(void) {
 
   abort.store(false, std::memory_order_relaxed);
   running = true;
@@ -1429,25 +1509,211 @@ void assembler_0_c::iterativeMultiSearch(void) {
   running = false;
 }
 
-void assembler_0_c::assemble(assembler_cb * callback) {
+void assembler_bt2_c::buildCells(void) {
+
+  if (cellsBuilt)
+    return;
+
+  cells.clear();
+
+  if (varivoxelEnd == 0 || left.empty()) {
+    cellsBuilt = true;
+    return;
+  }
+
+  std::vector<int> colToItem((size_t)varivoxelEnd + 1, -1);
+  unsigned int nPrimary = 0;
+  for (unsigned int c = right[0]; c != 0; c = right[c]) {
+    if (c <= varivoxelEnd)
+      colToItem[c] = (int)nPrimary++;
+  }
+
+  unsigned int nSecondary = 0;
+  if (varivoxelStart < varivoxelEnd) {
+    for (unsigned int c = right[varivoxelEnd]; c != varivoxelEnd; c = right[c]) {
+      if (c <= varivoxelEnd)
+        colToItem[c] = (int)(nPrimary + nSecondary++);
+    }
+  }
+
+  cells.prepare(nPrimary, nSecondary);
+
+  for (unsigned int i = 0; i < piecePositions.size(); i++) {
+    unsigned int row = piecePositions[i].row;
+    unsigned int col = colCount[row];
+    bool alive = false;
+    for (unsigned int r = down(col); r != col; r = down(r)) {
+      if (r == row) {
+        alive = true;
+        break;
+      }
+    }
+    if (!alive)
+      continue;
+
+    std::vector<unsigned int> items;
+    unsigned int n = row;
+    do {
+      unsigned int cc = colCount[n];
+      if (cc <= varivoxelEnd && colToItem[cc] >= 0)
+        items.push_back((unsigned int)colToItem[cc]);
+      n = right[n];
+    } while (n != row);
+
+    if (!items.empty())
+      cells.addOption(row, items);
+  }
+
+  cells.finishSetup();
+  cellsBuilt = true;
+}
+
+void assembler_bt2_c::cellsSolutionThunk(void * user, const unsigned int * rowIds, unsigned int n) {
+  assembler_bt2_c * self = (assembler_bt2_c *)user;
+  self->solutionFromRowNodes(rowIds, n);
+}
+
+void assembler_bt2_c::solutionFromRowNodes(const unsigned int * rowNodes, unsigned int n) {
+
+  if (!getCallback())
+    return;
+
+  assembly_c * assembly = new assembly_c(problem.getPuzzle().getGridType());
+
+  unsigned int * pieces = new unsigned int[getPiecenumber()];
+  unsigned char * trans = new unsigned char[getPiecenumber()];
+  int * xs = new int[getPiecenumber()];
+  int * ys = new int[getPiecenumber()];
+  int * zs = new int[getPiecenumber()];
+
+  memset(pieces, 0xff, sizeof(unsigned int) * getPiecenumber());
+
+  for (unsigned int i = 0; i < n; i++) {
+    unsigned char tran;
+    int x, y, z;
+    unsigned int piece;
+    getPieceInformation(rowNodes[i], &tran, &x, &y, &z, &piece);
+    if (piece < getPiecenumber()) {
+      pieces[piece] = i;
+      trans[piece] = tran;
+      xs[piece] = x;
+      ys[piece] = y;
+      zs[piece] = z;
+    }
+  }
+
+  for (unsigned int i = 0; i < getPiecenumber(); i++)
+    if (pieces[i] == 0xffffffffu)
+      assembly->addNonPlacement();
+    else
+      assembly->addPlacement(trans[i], xs[i], ys[i], zs[i]);
+
+  delete [] pieces;
+  delete [] trans;
+  delete [] xs;
+  delete [] ys;
+  delete [] zs;
+
+  if (avoidTransformedAssemblies && assembly->smallerRotationExists(problem, avoidTransformedPivot, avoidTransformedMirror, complete))
+    delete assembly;
+  else
+    getCallback()->assembly(assembly);
+}
+
+void assembler_bt2_c::assemble(assembler_cb * callback) {
+  assembleLimited(callback, 0);
+}
+
+void assembler_bt2_c::assembleLimited(assembler_cb * callback, unsigned int iterationBudget) {
 
   debug = false;
 
-  if (errorsState == ERR_NONE) {
-    asm_bc = callback;
-    iterativeMultiSearch();
+  if (errorsState != ERR_NONE)
+    return;
+
+  asm_bc = callback;
+  abort.store(false, std::memory_order_relaxed);
+  running = true;
+  buildCells();
+  cells.setSolutionCallback(this, cellsSolutionThunk);
+  cells.solve(iterationBudget, &abort);
+  iterations = cells.getIterations();
+  running = false;
+}
+
+assembler_c * assembler_bt2_c::clonePrepared(void) {
+
+  if (errorsState != ERR_NONE || !rows || !columns || piecenumber == 0)
+    return 0;
+
+  return new assembler_bt2_c(*this);
+}
+
+assembler_c * assembler_bt2_c::splitSearch(void) {
+
+  buildCells();
+  assembler_bt2_c * c = new assembler_bt2_c(*this);
+  bt2Cells_c * branch = cells.split();
+  if (!branch) {
+    delete c;
+    return 0;
   }
+  c->cells = *branch;
+  delete branch;
+  return c;
 }
 
-void assembler_0_c::stop(void) {
+bool assembler_bt2_c::searchFinished(void) const {
+  if (!cellsBuilt)
+    return false;
+  return cells.finished();
+}
+
+unsigned int assembler_bt2_c::remainingSearchWork(void) const {
+  if (!cellsBuilt)
+    return 0;
+  return cells.remainingWork();
+}
+
+void assembler_bt2_c::addIterations(unsigned long n) {
+  iterations += n;
+}
+
+void assembler_bt2_c::addProgressPeer(assembler_c * peer) {
+
+  assembler_bt2_c * p = dynamic_cast<assembler_bt2_c *>(peer);
+  if (p && p != this)
+    progressPeers.push_back(p);
+}
+
+void assembler_bt2_c::clearProgressPeers(void) {
+  progressPeers.clear();
+}
+
+void assembler_bt2_c::stop(void) {
+
   abort.store(true, std::memory_order_release);
+  for (unsigned int i = 0; i < progressPeers.size(); i++)
+    progressPeers[i]->abort.store(true, std::memory_order_release);
 }
 
-unsigned long assembler_0_c::getIterations(void) {
-  return iterations;
+unsigned long assembler_bt2_c::getIterations(void) {
+
+  unsigned long n = iterations;
+  if (cellsBuilt)
+    n += cells.getIterations();
+  for (unsigned int i = 0; i < progressPeers.size(); i++) {
+    n += progressPeers[i]->iterations;
+    if (progressPeers[i]->cellsBuilt)
+      n += progressPeers[i]->cells.getIterations();
+  }
+  return n;
 }
 
-float assembler_0_c::getFinished(void) const {
+float assembler_bt2_c::finishedLocal(void) const {
+
+  if (cellsBuilt)
+    return cells.progress();
 
   /* we don't need locking, as I hope that I have written the
    * code in a way that updated the data so, that it will never
@@ -1480,6 +1746,21 @@ float assembler_0_c::getFinished(void) const {
   return erg;
 }
 
+float assembler_bt2_c::getFinished(void) const {
+
+  float local = finishedLocal();
+  if (progressPeers.empty())
+    return local;
+
+  float sum = local;
+  unsigned int n = 1;
+  for (unsigned int i = 0; i < progressPeers.size(); i++) {
+    sum += progressPeers[i]->finishedLocal();
+    n++;
+  }
+  return sum / (float)n;
+}
+
 static unsigned int getInt(const char * s, unsigned int * i) {
 
   char * s2;
@@ -1504,7 +1785,7 @@ static unsigned int getLong(const char * s, unsigned long * i) {
     return 500000;
 }
 
-assembler_c::errState assembler_0_c::setPosition(const char * string, const char * version) {
+assembler_c::errState assembler_bt2_c::setPosition(const char * string, const char * version) {
 
   /* we assert that the matrix is in the initial position
    * otherwise we would have to clean the stack
@@ -1571,7 +1852,7 @@ assembler_c::errState assembler_0_c::setPosition(const char * string, const char
   return ERR_NONE;
 }
 
-void assembler_0_c::save(xmlWriter_c & xml) const
+void assembler_bt2_c::save(xmlWriter_c & xml) const
 {
   xml.newTag("assembler");
   xml.newAttrib("version", ASSEMBLER_VERSION);
@@ -1591,7 +1872,7 @@ void assembler_0_c::save(xmlWriter_c & xml) const
   xml.endTag("assembler");
 }
 
-unsigned int assembler_0_c::getPiecePlacement(unsigned int node, int delta, unsigned int piece, unsigned char *tran, int *x, int *y, int *z) const {
+unsigned int assembler_bt2_c::getPiecePlacement(unsigned int node, int delta, unsigned int piece, unsigned char *tran, int *x, int *y, int *z) const {
 
   unsigned int pi;
 
@@ -1615,20 +1896,19 @@ unsigned int assembler_0_c::getPiecePlacement(unsigned int node, int delta, unsi
   return node;
 }
 
-unsigned int assembler_0_c::getPiecePlacementCount(unsigned int piece) const {
+unsigned int assembler_bt2_c::getPiecePlacementCount(unsigned int piece) const {
 
   return colCount[piece+1];
 }
 
 
-void assembler_0_c::debug_step(unsigned long num) {
+void assembler_bt2_c::debug_step(unsigned long num) {
   debug = true;
-  debug_loops = num;
-  asm_bc = 0;
-  iterativeMultiSearch();
+  debug_loops = (int)num;
+  assembleLimited(0, (unsigned int)num);
 }
 
-bool assembler_0_c::canHandle(const problem_c & p) {
+bool assembler_bt2_c::canHandle(const problem_c & p) {
 
   // we can not handle if there is one shape having not a counter of 1
   for (unsigned int s = 0; s < p.getNumberOfParts(); s++)

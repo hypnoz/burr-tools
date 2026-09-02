@@ -29,7 +29,8 @@
 #include "disassembly.h"
 #include "rotationmoves_0.h"
 
-disassembler_a_c::disassembler_a_c(const problem_c & puz, bool enableRotations) :
+disassembler_a_c::disassembler_a_c(const problem_c & puz, bool enableRotations,
+                                   solverType_e solverType) :
   disassembler_c(), puzzle(puz), abort(false) {
 
   /* Initialise the grouping class */
@@ -47,11 +48,19 @@ disassembler_a_c::disassembler_a_c(const problem_c & puz, bool enableRotations) 
     for (unsigned int j = 0; j < puz.getPartMaximum(i); j++)
       piece2shape[p++] = i;
 
-  analyse = new movementAnalysator_c(puzzle, enableRotations);
+  analyse = new movementAnalysator_c(puzzle, enableRotations, solverType);
 }
 
 void disassembler_a_c::setCheckRotations(bool enable) {
   analyse->setCheckRotations(enable);
+}
+
+unsigned long long disassembler_a_c::getRotationSearchUs(void) const {
+  return analyse ? analyse->getRotationSearchUs() : 0;
+}
+
+unsigned long long disassembler_a_c::getLinearSearchUs(void) const {
+  return analyse ? analyse->getLinearSearchUs() : 0;
 }
 
 disassembler_a_c::~disassembler_a_c() {

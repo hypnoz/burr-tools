@@ -21,7 +21,9 @@
 #ifndef __ROTATION_MOVES_0_H__
 #define __ROTATION_MOVES_0_H__
 
+#include "rotationmoves.h"
 #include "rotationrules.h"
+#include "bt_classic_solver.h"
 
 #include <vector>
 
@@ -29,16 +31,6 @@ class problem_c;
 class disassemblerNode_c;
 class movementCache_c;
 class symmetries_c;
-
-/**
- * Direction codes used on disassemblerNode_c for rotation edges.
- * dir = ROTATION_DIR_BASE + axis*2 + sense  (axis 0..2, sense 0=+90 1=-90)
- */
-static const unsigned int ROTATION_DIR_BASE = 100;
-
-inline bool isRotationDirection(unsigned int dir) {
-  return dir >= ROTATION_DIR_BASE;
-}
 
 /**
  * Generate valid 90° rotation moves for brick grids.
@@ -52,7 +44,7 @@ inline bool isRotationDirection(unsigned int dir) {
  * in-plane faces/edges/corners (Fortran SimpleRot), stored in doubled
  * cell-index units.
  */
-class rotationMoves_0_c {
+class rotationMoves_0_c : public rotationMoves_c {
 
   private:
 
@@ -85,10 +77,10 @@ class rotationMoves_0_c {
   public:
 
     rotationMoves_0_c(const problem_c & puz, movementCache_c * cache_);
-    ~rotationMoves_0_c(void) {}
+    virtual ~rotationMoves_0_c(void) {}
 
-    void init_find(disassemblerNode_c * nd, const std::vector<unsigned int> & pcs);
-    disassemblerNode_c * find(void);
+    virtual void init_find(disassemblerNode_c * nd, const std::vector<unsigned int> & pcs);
+    virtual disassemblerNode_c * find(void);
 
   private:
 

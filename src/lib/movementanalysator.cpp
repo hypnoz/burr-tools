@@ -29,7 +29,10 @@
 #include "disassemblerhashes.h"
 #include "gridtype.h"
 #include "rotationmoves_0.h"
+#include "rotationmoves_crowell.h"
+#include "solvertype.h"
 
+#include <chrono>
 #include <string.h>
 
 /**
@@ -184,7 +187,7 @@ bool movementAnalysator_c::checkmovement(unsigned int maxPieces, unsigned int ne
    * stop and return that this movement is rubbish
    */
   unsigned int moved_pieces = 1;
-  bool check[piecenumber];
+  std::vector<char> check(piecenumber, 0);
 
   /* Initialise the movement matrix. We want to move 'nextpiece' 'nextstep' units
    * into the current direction, so we initialise the matrix with all
@@ -192,7 +195,6 @@ bool movementAnalysator_c::checkmovement(unsigned int maxPieces, unsigned int ne
    */
   for (int i = 0; i < next_pn; i++) {
     movement[i] = 0;
-    check[i] = false;
   }
   movement[nextpiece] = nextstep;
   check[nextpiece] = true;
@@ -304,9 +306,12 @@ bool movementAnalysator_c::checkmovement(unsigned int maxPieces, unsigned int ne
   return true;
 }
 
-movementAnalysator_c::movementAnalysator_c(const problem_c & problem, bool enableRotations) :
-  piecenumber(problem.getNumberOfPieces()), maxstep((unsigned int) -1),
-  checkRotations(false), bricksGrid(false), rotationMoves(0), rotationsActive(false) {
+movementAnalysator_c::movementAnalysator_c(const problem_c & problem, bool enableRotations,
+                                           solverType_e solverType) :
+  piecenumber(problem.getNumberOfPieces()),
+  checkRotations(false), bricksGrid(false), rotationMoves(0), rotationsActive(false), rotationSearchUs(0),
+  linearSearchUs(0), searchPhaseStartUs(0), searchTimingOpen(false), searchPhaseLinear(true),
+  maxstep((unsigned int) -1) {
 
   cache = problem.getPuzzle().getGridType()->getMovementCache(problem);
   /* we assert that there must be a cache, otherwise no disassembly
@@ -335,8 +340,13 @@ movementAnalysator_c::movementAnalysator_c(const problem_c & problem, bool enabl
 
   nodes = new countingNodeHash();
 
-  if (bricksGrid)
-    rotationMoves = new rotationMoves_0_c(problem, cache);
+  if (bricksGrid) {
+    if (solverType == SOLVER_CROWELL)
+      rotationMoves = new rotationMoves_crowell_c(problem, cache);
+    else
+      /* Classic and BurrTools 2 share the complete 90° generator. */
+      rotationMoves = new rotationMoves_0_c(problem, cache);
+  }
 
   setCheckRotations(enableRotations);
 }
@@ -510,8 +520,41 @@ disassemblerNode_c * movementAnalysator_c::newNodeMerge(const disassemblerNode_c
   return newNode(amount);
 }
 
+static unsigned long long analysatorNowUs(void) {
+  using namespace std::chrono;
+  return (unsigned long long)duration_cast<microseconds>(steady_clock::now().time_since_epoch()).count();
+}
+
+void movementAnalysator_c::flushSearchPhase(void) {
+  if (!searchTimingOpen)
+    return;
+  unsigned long long dt = analysatorNowUs() - searchPhaseStartUs;
+  if (searchPhaseLinear)
+    linearSearchUs.fetch_add(dt, std::memory_order_relaxed);
+  else
+    rotationSearchUs.fetch_add(dt, std::memory_order_relaxed);
+  searchTimingOpen = false;
+}
+
+void movementAnalysator_c::beginSearchPhase(bool linear) {
+  flushSearchPhase();
+  searchPhaseLinear = linear;
+  searchPhaseStartUs = analysatorNowUs();
+  searchTimingOpen = true;
+}
+
+void movementAnalysator_c::switchToRotationPhase(void) {
+  if (!searchTimingOpen || !searchPhaseLinear)
+    return;
+  flushSearchPhase();
+  searchPhaseLinear = false;
+  searchPhaseStartUs = analysatorNowUs();
+  searchTimingOpen = true;
+}
 
 void movementAnalysator_c::init_find(disassemblerNode_c * nd, const std::vector<unsigned int> & pcs) {
+
+  beginSearchPhase(true);
 
   /* Initialise the state machine for the find routine
    */
@@ -663,6 +706,7 @@ disassemblerNode_c * movementAnalysator_c::find(void) {
       case 3:
         /* 90° rotation moves (brick grids only, when enabled) */
         if (checkRotations && rotationMoves) {
+          switchToRotationPhase();
           n = rotationMoves->find();
           if (!n)
             nextstate++;
@@ -672,7 +716,7 @@ disassemblerNode_c * movementAnalysator_c::find(void) {
         break;
 
       default:
-        // endstate, do nothing
+        flushSearchPhase();
         return 0;
     }
   }

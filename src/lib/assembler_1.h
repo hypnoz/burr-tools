@@ -22,6 +22,7 @@
 #define __ASSEMBLER_1_H__
 
 #include "assembler.h"
+#include "bt_classic_solver.h"
 
 #include <atomic>
 #include <vector>

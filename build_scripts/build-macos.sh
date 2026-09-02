@@ -87,6 +87,9 @@ cd "$ROOT"
 # Apple Silicon and Intel Homebrew prefixes.
 export PATH="/opt/homebrew/bin:/usr/local/bin:${PATH}"
 
+# Match meson.build: compile FLTK and the app for the same macOS baseline.
+export MACOSX_DEPLOYMENT_TARGET=11.0
+
 info() { printf '%s\n' "$*"; }
 warn() { printf 'Warning: %s\n' "$*" >&2; }
 die() { printf 'Error: %s\n' "$*" >&2; exit 1; }

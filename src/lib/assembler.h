@@ -129,6 +129,41 @@ public:
   virtual void assemble(assembler_cb * /*callback*/) {}
 
   /**
+   * Copy a prepared assembler (createMatrix and optional reduce done).
+   * Returns 0 if this backend cannot clone. Caller owns the pointer.
+   * Classic and Crowell never call this.
+   */
+  virtual assembler_c * clonePrepared(void) { return 0; }
+
+  /**
+   * Split the current search node: return a clone that owns the current
+   * branch, and advance this instance past that branch. Returns 0 if
+   * nothing remains to split. Classic and Crowell never call this.
+   */
+  virtual assembler_c * splitSearch(void) { return 0; }
+
+  /** True when this instance has no remaining assembly search work. */
+  virtual bool searchFinished(void) const { return true; }
+
+  /** Heuristic leftover work for work-stealing (larger = better split source). */
+  virtual unsigned int remainingSearchWork(void) const { return 0; }
+
+  /**
+   * Run up to iterationBudget search steps (0 = unlimited). Classic ignores
+   * the budget and runs to completion via assemble().
+   */
+  virtual void assembleLimited(assembler_cb * callback, unsigned int /*iterationBudget*/) {
+    assemble(callback);
+  }
+
+  /** Add iterations from a finished clone so getIterations() reports the union. */
+  virtual void addIterations(unsigned long /*n*/) {}
+
+  /** Register a clone whose getFinished/getIterations should be mixed in. */
+  virtual void addProgressPeer(assembler_c * /*peer*/) {}
+  virtual void clearProgressPeers(void) {}
+
+  /**
    * this function returns a number reflecting the complexity of the
    * puzzle. This could be the number of placements tried, or
    * some other value
